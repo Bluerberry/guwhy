@@ -157,13 +157,16 @@ class Layout(Box):
 		return delta
 
 	def _clampChildren(self, parent: Box, axis: Axis):
-		parent_internal = parent._size[axis].computed - parent._axial_padding[axis] - parent._axial_border[axis]
+		parent_internal = parent._size[axis].computed \
+						- parent._axial_padding[axis] \
+						- parent._axial_border[axis]
 
 		for child in parent._automatic_children:
 			child_size = child._size[axis]
 			child_margin = child._axial_margin[axis]
 
-			if child_size.value == NodeSize.GROW or child_size.value == NodeSize.FIT and child_size.computed + child_margin > parent_internal:
+			if child_size.value == NodeSize.GROW \
+			or child_size.value == NodeSize.FIT and child_size.computed + child_margin > parent_internal:
 				child_size.computed = Layout._clamp(
 					parent_internal - child_margin,
 					child._min_size[axis].computed,
@@ -205,8 +208,10 @@ class Layout(Box):
 
 		node._axial_margin[axis] = first_margin.computed + last_margin.computed
 		node._axial_padding[axis] = first_padding.computed + last_padding.computed
-		node._axial_border[axis] = 1 if node._border[_FIRST_DIRECTION[axis]].value != NodeBorder.NONE else 0
+		node._axial_border[axis] = 0
 
+		if node._border[_FIRST_DIRECTION[axis]].value != NodeBorder.NONE:
+			node._axial_border[axis] += 1
 		if node._border[_LAST_DIRECTION[axis]].value != NodeBorder.NONE:
 			node._axial_border[axis] += 1
 
@@ -230,7 +235,7 @@ class Layout(Box):
 
 	def _computePreferredSize(self, node: Node, axis: Axis):
 		size = node._size[axis]
-		if size.value == NodeSize.GROW or size.value == NodeSize.FIT:
+		if size.value in (NodeSize.GROW, NodeSize.FIT):
 			size.computed += node._axial_padding[axis] + node._axial_border[axis]
 
 			if isinstance(node, Box):
@@ -261,7 +266,7 @@ class Layout(Box):
 			return
 
 		parent_size = parent._size[axis]
-		if parent_size.value != NodeSize.GROW and parent_size.value != NodeSize.FIT:
+		if parent_size.value not in (NodeSize.GROW, NodeSize.FIT):
 			return
 
 		external = size.computed + node._axial_margin[axis]
@@ -274,28 +279,31 @@ class Layout(Box):
 	def _computeRelativeSize(self, parent: Box, axis: Axis):
 		parent_size = parent._size[axis]
 		for child in parent._children:
-			child_size = child._size[axis]
 
 			# Relative size
+			child_size = child._size[axis]
 			if child_size.unit == Unit.PERCENTAGE:
 				child_size.computed = int(parent_size.computed * child_size.value / 100)
 
 			# Relative limits
 			min_size = child._min_size[axis]
-			max_size = child._max_size[axis]
-
 			if min_size.unit == Unit.PERCENTAGE:
 				min_size.computed = int(parent_size.computed * min_size.value / 100)
+
+			max_size = child._max_size[axis]
 			if max_size.unit == Unit.PERCENTAGE:
 				max_size.computed = int(parent_size.computed * max_size.value / 100)
 
 			# Relative position
-			first_position = child._position[_FIRST_DIRECTION[axis]]
-			last_position = child._position[_LAST_DIRECTION[axis]]
-			reference = self._size[axis].computed if child._positioning.value == NodePositioning.ABSOLUTE else parent_size.computed
+			reference = parent_size.computed
+			if child._positioning.value == NodePositioning.ABSOLUTE:
+				reference = self._size[axis].computed
 
+			first_position = child._position[_FIRST_DIRECTION[axis]]
 			if first_position.unit == Unit.PERCENTAGE:
 				first_position.computed = int(reference * first_position.value / 100)
+
+			last_position = child._position[_LAST_DIRECTION[axis]]
 			if last_position.unit == Unit.PERCENTAGE:
 				last_position.computed = int(reference * last_position.value / 100)
 
@@ -328,18 +336,15 @@ class Layout(Box):
 		# Clamp children across axis
 		self._clampChildren(parent, axis)
 
-	def _computePosition(self, parent: Box, axis: Axis):
-
-		# Calculate parent offset
+	def _computePositionOffset(self, parent: Box, axis: Axis):
 		offset = parent._origin[axis] + parent._padding[_FIRST_DIRECTION[axis]].computed
 		if parent._border[_FIRST_DIRECTION[axis]].value != NodeBorder.NONE:
 			offset += 1
 
-		# Positioned children
-		parent_size = parent._size[axis]
-		parent_padding = parent._axial_padding[axis]
-		parent_border = parent._axial_border[axis]
+		return offset
 
+	def _computeManualPosition(self, parent: Box, axis: Axis, offset: int):
+		parent_size = parent._size[axis]
 		for child in parent._manual_children:
 			translate = child._translate[axis]
 			first_position = child._position[_FIRST_DIRECTION[axis]]
@@ -358,39 +363,41 @@ class Layout(Box):
 			if child._positioning.value == NodePositioning.RELATIVE:
 				child._origin[axis] += offset
 
-		# Automatic children along layout axis
+	def _computeAutoPositionAlong(self, parent: Box, axis: Axis, offset: int):
 		automatic_children = parent._automatic_children
-		if parent._axis.value == axis:
-			place_content_along = parent._place_content_along
+		place_content_along = parent._place_content_along
+		child_gap = parent._child_gap
 
-			if place_content_along.value != BoxPlaceContent.START:
-				remaining = parent_size.computed - parent_padding - parent_border
-				gaps = len(automatic_children) - 1
+		if place_content_along.value != BoxPlaceContent.START:
+			remaining = parent._size[axis].computed - parent._axial_padding[axis] - parent._axial_border[axis]
+			gaps = len(automatic_children) - 1
 
-				if gaps > 0:
-					remaining -= parent._child_gap.computed * gaps
-
-				for child in automatic_children:
-					remaining -= child._size[axis].computed + child._axial_margin[axis]
-
-				if place_content_along.value == BoxPlaceContent.CENTER:
-					offset += int(remaining / 2)
-				else:
-					offset += remaining
-
+			if gaps > 0:
+				remaining -= child_gap.computed * gaps
 			for child in automatic_children:
-				child._origin[axis] = (
-					offset
-					+ child._margin[_FIRST_DIRECTION[axis]].computed
-					+ child._translate[axis].computed
-				)
+				remaining -= child._size[axis].computed + child._axial_margin[axis]
 
-				offset += child._size[axis].computed + child._axial_margin[axis] + parent._child_gap.computed
+			if place_content_along.value == BoxPlaceContent.CENTER:
+				offset += int(remaining / 2)
+			else:
+				offset += remaining
 
-			return
-
-		# Automatic children across layout axis
 		for child in automatic_children:
+			child._origin[axis] = (
+				offset
+				+ child._margin[_FIRST_DIRECTION[axis]].computed
+				+ child._translate[axis].computed
+			)
+
+			offset += child._size[axis].computed + child._axial_margin[axis] + child_gap.computed
+
+	def _computeAutoPositionAcross(self, parent: Box, axis: Axis, offset: int):
+		parent_size = parent._size[axis]
+		parent_border = parent._axial_border[axis]
+		parent_padding = parent._axial_padding[axis]
+		inherit_place_self_across = _PLACE_SELF[parent._place_content_across.value]
+
+		for child in parent._automatic_children:
 			child._origin[axis] = (
 				offset
 				+ child._margin[_FIRST_DIRECTION[axis]].computed
@@ -399,7 +406,7 @@ class Layout(Box):
 
 			place_self_across = child._place_self_across
 			place_self_across.computed = (
-				_PLACE_SELF[parent._place_content_across.value]
+				inherit_place_self_across
 				if place_self_across.value == NodePlaceSelf.INHERIT
 				else place_self_across.value
 			)
@@ -407,8 +414,8 @@ class Layout(Box):
 			if place_self_across.computed != NodePlaceSelf.START:
 				remaining = (
 					parent_size.computed
-				  - parent_padding
 				  - parent_border
+				  - parent_padding
 				  - child._size[axis].computed
 				  - child._axial_margin[axis]
 				)
@@ -449,6 +456,7 @@ class Layout(Box):
 			if isinstance(node, Text):
 				self._computeHorizontalText(node)
 			self._computePreferredSize(node, Axis.HORIZONTAL)
+
 		for node in pre:
 			if isinstance(node, Box):
 				self._computeRelativeSize(node, Axis.HORIZONTAL)
@@ -460,11 +468,16 @@ class Layout(Box):
 			if isinstance(node, Text):
 				self._computeVerticalText(node)
 			self._computePreferredSize(node, Axis.VERTICAL)
+
 		for node in pre:
 			if isinstance(node, Box):
 				self._computeRelativeSize(node, Axis.VERTICAL)
 				self._computeDynamicSize(node, Axis.VERTICAL)
-				self._computePosition(node, Axis.VERTICAL)
+
+				offset = self._computePositionOffset(node, Axis.VERTICAL)
+				self._computeManualPosition(node, Axis.VERTICAL, offset)
+				self._computeAutoPositionAlong(node, Axis.VERTICAL, offset)
+				self._computeAutoPositionAcross(node, Axis.VERTICAL, offset)
 
 		# Compute rects
 		for node in pre:

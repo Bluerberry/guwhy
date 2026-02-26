@@ -28,53 +28,108 @@ class TokenType(Enum):
 	KEY = auto()
 
 class Token:
-	__slots__ = 'type', 'raw', 'end'
+	__slots__ = 'token_type', 'raw', 'end'
 
-	def __init__(self, type: TokenType, raw: str, end: int):
-		self.type = type
-		self.raw  = raw
-		self.end  = end
+	def __init__(self, token_type: TokenType, raw: str, end: int):
+		self.token_type = token_type
+		self.raw = raw
+		self.end = end
 
 # -----------------------------------> Operations
 
-def _op_descendants(s: SelectionSet) -> SelectionSet:
-	return {d for n in s if isinstance(n, Box) for d in n._descendants}
+def _selectDescendants(selection: SelectionSet) -> SelectionSet:
+	return {
+		descendant
+		for node in selection
+		if isinstance(node, Box)
+		for descendant in node._descendants
+	}
 
-def _op_children(s: SelectionSet) -> SelectionSet:
-	return {c for n in s if isinstance(n, Box) for c in n._children}
+def _selectChildren(selection: SelectionSet) -> SelectionSet:
+	return {
+		child
+		for node in selection
+		if isinstance(node, Box)
+		for child in node._children
+	}
 
-def _op_parents(s: SelectionSet) -> SelectionSet:
-	return {n._parent for n in s if n._parent is not None}
+def _selectParents(selection: SelectionSet) -> SelectionSet:
+	return {
+		node._parent
+		for node in selection
+		if node._parent is not None
+	}
 
-def _op_siblings(s: SelectionSet) -> SelectionSet:
-	return {sib for n in s if n._parent for sib in n._parent._children}
+def _selectSiblings(selection: SelectionSet) -> SelectionSet:
+	return {
+		sibling
+		for node in selection
+		if node._parent
+		for sibling in node._parent._children
+	}
 
-def _op_prev(s: SelectionSet) -> SelectionSet:
-	return {n._prev for n in s if n._prev is not None}
+def _selectPrev(selection: SelectionSet) -> SelectionSet:
+	return {
+		node._prev
+		for node in selection
+		if node._prev is not None
+	}
 
-def _op_next(s: SelectionSet) -> SelectionSet:
-	return {n._next for n in s if n._next is not None}
+def _selectNext(selection: SelectionSet) -> SelectionSet:
+	return {
+		node._next
+		for node in selection
+		if node._next is not None
+	}
 
-def _op_first_child(s: SelectionSet) -> SelectionSet:
-	return {n for n in s if n._prev is None}
+def _selectFirstChild(selection: SelectionSet) -> SelectionSet:
+	return {
+		node
+		for node in selection
+		if node._prev is None
+	}
 
-def _op_last_child(s: SelectionSet) -> SelectionSet:
-	return {n for n in s if n._next is None}
+def _selectLastChild(selection: SelectionSet) -> SelectionSet:
+	return {
+		node
+		for node in selection
+		if node._next is None
+	}
 
-def _op_even(s: SelectionSet) -> SelectionSet:
-	return {n for n in s if n._index % 2 == 0}
+def _selectEvenChildren(selection: SelectionSet) -> SelectionSet:
+	return {
+		node
+		for node in selection
+		if node._index % 2 == 0
+	}
 
-def _op_odd(s: SelectionSet) -> SelectionSet:
-	return {n for n in s if n._index % 2 == 1}
+def _selectOddChildren(selection: SelectionSet) -> SelectionSet:
+	return {
+		node
+		for node in selection
+		if node._index % 2 == 1
+	}
 
-def _op_with_id(id: str) -> Operation:
-	return lambda s: {n for n in s if n._id == id}
+def _selectWithId(id: str) -> Operation:
+	return lambda selection: {
+		node
+		for node in selection
+		if node.id == id
+	}
 
-def _op_with_class(cls: str) -> Operation:
-	return lambda s: {n for n in s if cls in n._classlist}
+def _selectWithClass(cls: str) -> Operation:
+	return lambda selection: {
+		node
+		for node in selection
+		if cls in node.classlist
+	}
 
-def _op_type(t: type) -> Operation:
-	return lambda s: {n for n in s if isinstance(n, t)}
+def _selectWithType(type: type) -> Operation:
+	return lambda selection: {
+		node
+		for node in selection
+		if isinstance(node, type)
+	}
 
 # -----------------------------------> Lookup tables
 
@@ -92,23 +147,23 @@ _RESERVED = {
 }
 
 _TYPE_OPS = {
-	'box': _op_type(Box),
-	'text': _op_type(Text)
+	'box': _selectWithType(Box),
+	'text': _selectWithType(Text)
 }
 
 _CONTEXT_OPS = {
-	'first': _op_first_child,
-	'last': _op_last_child,
-	'even': _op_even,
-	'odd': _op_odd,
+	'first': _selectFirstChild,
+	'last': _selectLastChild,
+	'even': _selectEvenChildren,
+	'odd': _selectOddChildren,
 }
 
 _EXPANDING_OPS = {
-	TokenType.PARENTS: _op_parents,
-	TokenType.CHILDREN: _op_children,
-	TokenType.SIBLINGS: _op_siblings,
-	TokenType.PREV: _op_prev,
-	TokenType.NEXT: _op_next,
+	TokenType.PARENTS: _selectParents,
+	TokenType.CHILDREN: _selectChildren,
+	TokenType.SIBLINGS: _selectSiblings,
+	TokenType.PREV: _selectPrev,
+	TokenType.NEXT: _selectNext,
 }
 
 # -----------------------------------> Parser
@@ -167,8 +222,8 @@ def _tokenize(raw: str) -> list[Token]:
 
 	for current, char in enumerate(raw):
 		if char in _RESERVED:
-			type = _RESERVED[char]
-			if type == TokenType.WHITESPACE:
+			token_type = _RESERVED[char]
+			if token_type == TokenType.WHITESPACE:
 				if collapse_whitespace:
 					continue
 				collapse_whitespace = True
@@ -179,7 +234,7 @@ def _tokenize(raw: str) -> list[Token]:
 			if token:
 				tokens.append(Token(TokenType.KEY, token, current))
 				token = ''
-			tokens.append(Token(type, char, current + 1))
+			tokens.append(Token(token_type, char, current + 1))
 			continue
 
 		collapse_whitespace = False
@@ -195,25 +250,25 @@ def _parse(raw: str, tokens: list[Token]) -> list[Operation]:
 	token = None
 
 	for token in tokens:
-		key = token.type, state
+		key = token.token_type, state
 		if key not in _STATEMACHINE:
 			raise SelectorSyntaxError(raw, token, 'Unexpected token')
 
-		if token.type in _EXPANDING_OPS:
-			operations.append(_EXPANDING_OPS[token.type])
+		if token.token_type in _EXPANDING_OPS:
+			operations.append(_EXPANDING_OPS[token.token_type])
 
 		else:
 			if state == ParseState.FIRST_WHITESPACE:
-				operations.append(_op_descendants)
+				operations.append(_selectDescendants)
 			if state == ParseState.EXPECT_ID:
-				operations.append(_op_with_id(token.raw))
+				operations.append(_selectWithId(token.raw))
 			elif state == ParseState.EXPECT_CLASS:
-				operations.append(_op_with_class(token.raw))
+				operations.append(_selectWithClass(token.raw))
 			elif state == ParseState.EXPECT_CONTEXT:
 				if token.raw not in _CONTEXT_OPS:
 					raise SelectorSyntaxError(raw, token, 'Unknown context')
 				operations.append(_CONTEXT_OPS[token.raw])
-			elif token.type == TokenType.KEY:
+			elif token.token_type == TokenType.KEY:
 				if token.raw not in _TYPE_OPS:
 					raise SelectorSyntaxError(raw, token, 'Unknown type')
 				operations.append(_TYPE_OPS[token.raw])

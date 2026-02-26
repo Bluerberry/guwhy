@@ -52,7 +52,7 @@ class Canvas:
 		pixels = self.pixels
 		size = self.width * self.height
 		compressed = [' '] * size
-		
+
 		for n in range(size):
 			for layer in reversed(pixels):
 				if layer[n] is not None:

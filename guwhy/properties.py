@@ -6,9 +6,6 @@ import re
 from enum import Enum, auto
 from typing import Any, Optional
 
-# Internal
-from .literals import *
-
 # Types
 class Axis(Enum):
 	HORIZONTAL = 'horizontal'
@@ -103,6 +100,7 @@ def _parse(descriptor: BaseDescriptor, property: Property, raw: str):
 # -----------------------------------> Descriptors
 
 class BaseDescriptor:
+	attr: str
 	def __init__(self, default: str, *,
 		pixels: bool = False,
 		squares: bool = False,
@@ -123,24 +121,20 @@ class BaseDescriptor:
 		self.attr = f'_{name}'
 
 		# Register descriptor (for setup later)
-		if not hasattr(owner, '__descriptors__'):
-			owner.__descriptors__ = []
-		if not hasattr(owner, '__styles__'):
-			owner.__styles__ = []
 		owner.__descriptors__.append(self)
 		owner.__styles__.append(name)
 
-	def setup(self, instance):
+	def setup(self, _):
 		raise NotImplementedError
 
 class PropertyDescriptor(BaseDescriptor):
-	def __get__(self, instance, owner):
+	def __get__(self, instance, _):
 		if instance is None:
 			return self
 		attr: Property = getattr(instance, self.attr)
 		return attr.raw
 
-	def __set__(self, instance, raw: str):
+	def __set__(self, instance, raw):
 		attr: Property = getattr(instance, self.attr)
 		_parse(self, attr, raw)
 
@@ -150,13 +144,13 @@ class PropertyDescriptor(BaseDescriptor):
 		self.__set__(instance, self.default)
 
 class AxialDescriptor(BaseDescriptor):
-	def __get__(self, instance, owner):
+	def __get__(self, instance, _):
 		if instance is None:
 			return self
 		attr: AxialProperty = getattr(instance, self.attr)
 		return f'{attr[Axis.HORIZONTAL].raw} {attr[Axis.VERTICAL].raw}'
 
-	def __set__(self, instance, raw: str):
+	def __set__(self, instance, raw):
 		parts = raw.split()
 		match len(parts):
 			case 1: horizontal, vertical = parts[0], parts[0]
@@ -177,20 +171,21 @@ class AxialDescriptor(BaseDescriptor):
 		self.__set__(instance, self.default)
 
 class DirectionalDescriptor(BaseDescriptor):
-	def __get__(self, instance, owner):
+	def __get__(self, instance, _):
 		if instance is None:
 			return self
 		attr: DirectionalProperty = getattr(instance, self.attr)
-		return f'{attr[Direction.TOP].raw} {attr[Direction.RIGHT].raw} {attr[Direction.BOTTOM].raw} {attr[Direction.LEFT].raw}'
+		return f'{attr[Direction.TOP].raw} {attr[Direction.RIGHT].raw} ' \
+			 + f'{attr[Direction.BOTTOM].raw} {attr[Direction.LEFT].raw}'
 
-	def __set__(self, instance, raw: str):
+	def __set__(self, instance, raw):
 		parts = raw.split()
 		match len(parts):
 			case 1: top, right, bottom, left = parts[0], parts[0], parts[0], parts[0]
 			case 2: top, right, bottom, left = parts[0], parts[1], parts[0], parts[1]
 			case 3: top, right, bottom, left = parts[0], parts[1], parts[2], parts[1]
 			case 4: top, right, bottom, left = parts[0], parts[1], parts[2], parts[3]
-			case _: raise ValueError(f'Directional property must have 1-4 values: {raw}')
+			case _: raise ValueError(f'Cardinal property must have 1-4 values: {raw}')
 
 		attr: DirectionalProperty = getattr(instance, self.attr)
 		_parse(self, attr[Direction.TOP], top)
@@ -210,6 +205,8 @@ class DirectionalDescriptor(BaseDescriptor):
 		self.__set__(instance, self.default)
 
 class SubDescriptor:
+	attr: str
+
 	def __init__(self, parent: BaseDescriptor, key: Axis | Direction):
 		self.parent = parent
 		self.key = key
@@ -218,16 +215,14 @@ class SubDescriptor:
 		self.attr = f'_{name}'
 
 		# Register descriptor (for setup later)
-		if not hasattr(owner, '__styles__'):
-			owner.__styles__ = []
 		owner.__styles__.append(name)
 
-	def __get__(self, instance, owner):
+	def __get__(self, instance, _):
 		if instance is None:
 			return self
 		attr: AxialProperty | DirectionalProperty = getattr(instance, self.parent.attr)
 		return attr[self.key].raw
 
-	def __set__(self, instance, raw: str):
+	def __set__(self, instance, raw):
 		attr: AxialProperty | DirectionalProperty = getattr(instance, self.parent.attr)
 		_parse(self.parent, attr[self.key], raw)

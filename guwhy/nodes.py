@@ -6,8 +6,8 @@ from typing import Optional
 
 # Internal
 from .properties import *
-from .canvas import *
 from .literals import *
+from .canvas import *
 
 # Maps
 _HLINE = { NodeBorder.SINGLE: '─', NodeBorder.DOUBLE: '═' }
@@ -159,6 +159,9 @@ class Node:
 	_rect: Rect
 	_clip: Rect
 
+	__styles__: list[str] = []
+	__descriptors__: list[BaseDescriptor] = []
+
 	def __init__(self, id=None, classlist=None, **kwargs):
 
 		# Setup privates
@@ -172,14 +175,15 @@ class Node:
 			descriptor.setup(self)
 
 		# ID and classlist
-		self._id = id
-		self._classlist = classlist or []
+		self.id = id
+		self.classlist = classlist or []
 
 		# Apply user styles
 		self.applyStyles(**kwargs)
 
 	def __repr__(self):
-		return f'Node ({self._origin[Axis.HORIZONTAL]}, {self._origin[Axis.VERTICAL]}) {self._size[Axis.HORIZONTAL].computed}x{self._size[Axis.VERTICAL].computed}'
+		return f'Node ({self._origin[Axis.HORIZONTAL]}, {self._origin[Axis.VERTICAL]}) ' \
+			 + f'{self._size[Axis.HORIZONTAL].computed}x{self._size[Axis.VERTICAL].computed}'
 
 	def setParent(self, value: Optional[Box]):
 		if value == self._parent:
@@ -205,12 +209,12 @@ class Node:
 		right = border[Direction.RIGHT].value
 		bottom = border[Direction.BOTTOM].value
 		left = border[Direction.LEFT].value
-		
+
 		top_visible = top != NodeBorder.NONE and clip.top <= rect.top <= clip.bottom
 		right_visible = right != NodeBorder.NONE and clip.left <= rect.right <= clip.right
 		bottom_visible = bottom != NodeBorder.NONE and clip.top <= rect.bottom <= clip.bottom
 		left_visible = left != NodeBorder.NONE and clip.left <= rect.left <= clip.right
-		
+
 		# Draw sides
 		if top_visible and rect.w > 2:
 			canvas.drawHLine(_HLINE[top], clip.left,  clip.right,  clip.top, z)
@@ -220,19 +224,33 @@ class Node:
 			canvas.drawVLine(_VLINE[right], clip.right, clip.top, clip.bottom, z)
 		if left_visible and rect.h > 2:
 			canvas.drawVLine(_VLINE[left], clip.left,  clip.top, clip.bottom, z)
-		
+
 		# Draw corners
 		if top_visible:
 			if left_visible:
-				canvas.drawChar(_CORNERS[(Direction.TOP, Direction.LEFT)][(top, left)], clip.left,  clip.top, z)
+				canvas.drawChar(
+					_CORNERS[(Direction.TOP, Direction.LEFT)][(top, left)],
+					clip.left, clip.top, z
+				)
+
 			if right_visible:
-				canvas.drawChar(_CORNERS[(Direction.TOP, Direction.RIGHT)][(top, right)], clip.right, clip.top, z)
+				canvas.drawChar(
+					_CORNERS[(Direction.TOP, Direction.RIGHT)][(top, right)],
+					clip.right, clip.top, z
+				)
 
 		if bottom_visible:
 			if left_visible:
-				canvas.drawChar(_CORNERS[(Direction.BOTTOM, Direction.LEFT)][(bottom, left)], clip.left,  clip.bottom, z)
+				canvas.drawChar(
+					_CORNERS[(Direction.BOTTOM, Direction.LEFT)][(bottom, left)],
+					clip.left,  clip.bottom, z
+				)
+
 			if right_visible:
-				canvas.drawChar(_CORNERS[(Direction.BOTTOM, Direction.RIGHT)][(bottom, right)], clip.right, clip.bottom, z)
+				canvas.drawChar(
+					_CORNERS[(Direction.BOTTOM, Direction.RIGHT)][(bottom, right)],
+					clip.right, clip.bottom, z
+				)
 
 class Box(Node):
 	axis: str = PropertyDescriptor('vertical', literals=Axis)
@@ -254,7 +272,8 @@ class Box(Node):
 			self.addChild(child)
 
 	def __repr__(self):
-		result = f'Box ({self._origin[Axis.HORIZONTAL]}, {self._origin[Axis.VERTICAL]}) {self._size[Axis.HORIZONTAL].computed}x{self._size[Axis.VERTICAL].computed}'
+		result = f'Box ({self._origin[Axis.HORIZONTAL]}, {self._origin[Axis.VERTICAL]}) ' \
+			   + f'{self._size[Axis.HORIZONTAL].computed}x{self._size[Axis.VERTICAL].computed}'
 		for child in self._children:
 			result += '\n  ' + '\n  '.join(child.__repr__().splitlines())
 		return result
@@ -338,7 +357,8 @@ class Text(Node):
 		super().__init__(**kwargs)
 
 	def __repr__(self):
-		return f'Text ({self._origin[Axis.HORIZONTAL]}, {self._origin[Axis.VERTICAL]}) {self._size[Axis.HORIZONTAL].computed}x{self._size[Axis.VERTICAL].computed}'
+		return f'Text ({self._origin[Axis.HORIZONTAL]}, {self._origin[Axis.VERTICAL]}) ' \
+			 + f'{self._size[Axis.HORIZONTAL].computed}x{self._size[Axis.VERTICAL].computed}'
 
 	def paint(self, canvas: Canvas):
 		super().paint(canvas)
@@ -349,7 +369,7 @@ class Text(Node):
 		x = rect.left + self._padding[Direction.LEFT].computed
 		if place_horz != TextPlaceHorz.LEFT:
 			remaining = rect.w - self._axial_padding[Axis.HORIZONTAL] - len(text_lines[0])
-			
+
 			if place_horz == TextPlaceHorz.RIGHT:
 				x += int(remaining / 2)
 			else:
@@ -359,7 +379,7 @@ class Text(Node):
 		y = rect.top + self._padding[Direction.TOP].computed
 		if place_vert != TextPlaceVert.TOP:
 			remaining = rect.h - self._axial_padding[Axis.VERTICAL] - len(text_lines)
-			
+
 			if place_vert == TextPlaceVert.CENTER:
 				y += int(remaining / 2)
 			else:
