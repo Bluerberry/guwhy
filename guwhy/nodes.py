@@ -39,7 +39,7 @@ _CORNERS = {
 	}
 }
 
-# ----------------------------------> Clip rect
+# ----------------------------------> Rect
 
 class Rect:
 	__slots__ = 'x', 'y', 'w', 'h', 'top', 'right', 'bottom', 'left'
@@ -47,7 +47,6 @@ class Rect:
 	@staticmethod
 	def fromBoundries(top: int, right: int, bottom: int, left: int) -> Rect:
 		rect = Rect()
-
 		rect.x = left
 		rect.y = top
 		rect.w = right - left + 1
@@ -62,7 +61,6 @@ class Rect:
 	@staticmethod
 	def fromOriginAndSize(x: int, y: int, w: int, h: int) -> Rect:
 		rect = Rect()
-
 		rect.x = x
 		rect.y = y
 		rect.w = w
@@ -198,38 +196,43 @@ class Node:
 			setattr(self, key, value)
 
 	def paint(self, canvas: Canvas):
-		top = self._border[Direction.TOP].value
-		right = self._border[Direction.RIGHT].value
-		bottom = self._border[Direction.BOTTOM].value
-		left = self._border[Direction.LEFT].value
+		border = self._border
+		clip = self._clip
+		rect = self._rect
+		z = self._z_index.value
+
+		top = border[Direction.TOP].value
+		right = border[Direction.RIGHT].value
+		bottom = border[Direction.BOTTOM].value
+		left = border[Direction.LEFT].value
 		
-		top_vis = top != NodeBorder.NONE and self._clip.top <= self._rect.top <= self._clip.bottom
-		right_vis = right != NodeBorder.NONE and self._clip.left <= self._rect.right <= self._clip.right
-		bottom_vis = bottom != NodeBorder.NONE and self._clip.top <= self._rect.bottom <= self._clip.bottom
-		left_vis = left != NodeBorder.NONE and self._clip.left <= self._rect.left <= self._clip.right
+		top_visible = top != NodeBorder.NONE and clip.top <= rect.top <= clip.bottom
+		right_visible = right != NodeBorder.NONE and clip.left <= rect.right <= clip.right
+		bottom_visible = bottom != NodeBorder.NONE and clip.top <= rect.bottom <= clip.bottom
+		left_visible = left != NodeBorder.NONE and clip.left <= rect.left <= clip.right
 		
 		# Draw sides
-		if top_vis and self._rect.w > 2:
-			canvas.drawHLine(_HLINE[top], self._clip.left,  self._clip.right,  self._clip.top, self._z_index.value)
-		if bottom_vis and self._rect.w > 2:
-			canvas.drawHLine(_HLINE[bottom], self._clip.left,  self._clip.right, self._clip.bottom, self._z_index.value)
-		if right_vis and self._rect.h > 2:
-			canvas.drawVLine(_VLINE[right], self._clip.right, self._clip.top, self._clip.bottom, self._z_index.value)
-		if left_vis and self._rect.h > 2:
-			canvas.drawVLine(_VLINE[left], self._clip.left,  self._clip.top, self._clip.bottom, self._z_index.value)
+		if top_visible and rect.w > 2:
+			canvas.drawHLine(_HLINE[top], clip.left,  clip.right,  clip.top, z)
+		if bottom_visible and rect.w > 2:
+			canvas.drawHLine(_HLINE[bottom], clip.left,  clip.right, clip.bottom, z)
+		if right_visible and rect.h > 2:
+			canvas.drawVLine(_VLINE[right], clip.right, clip.top, clip.bottom, z)
+		if left_visible and rect.h > 2:
+			canvas.drawVLine(_VLINE[left], clip.left,  clip.top, clip.bottom, z)
 		
 		# Draw corners
-		if top_vis:
-			if left_vis:
-				canvas.drawChar(_CORNERS[(Direction.TOP, Direction.LEFT)][(top, left)], self._clip.left,  self._clip.top, self._z_index.value)
-			if right_vis:
-				canvas.drawChar(_CORNERS[(Direction.TOP, Direction.RIGHT)][(top, right)], self._clip.right, self._clip.top, self._z_index.value)
+		if top_visible:
+			if left_visible:
+				canvas.drawChar(_CORNERS[(Direction.TOP, Direction.LEFT)][(top, left)], clip.left,  clip.top, z)
+			if right_visible:
+				canvas.drawChar(_CORNERS[(Direction.TOP, Direction.RIGHT)][(top, right)], clip.right, clip.top, z)
 
-		if bottom_vis:
-			if left_vis:
-				canvas.drawChar(_CORNERS[(Direction.BOTTOM, Direction.LEFT)][(bottom, left)], self._clip.left,  self._clip.bottom, self._z_index.value)
-			if right_vis:
-				canvas.drawChar(_CORNERS[(Direction.BOTTOM, Direction.RIGHT)][(bottom, right)], self._clip.right, self._clip.bottom, self._z_index.value)
+		if bottom_visible:
+			if left_visible:
+				canvas.drawChar(_CORNERS[(Direction.BOTTOM, Direction.LEFT)][(bottom, left)], clip.left,  clip.bottom, z)
+			if right_visible:
+				canvas.drawChar(_CORNERS[(Direction.BOTTOM, Direction.RIGHT)][(bottom, right)], clip.right, clip.bottom, z)
 
 class Box(Node):
 	axis: str = PropertyDescriptor('vertical', literals=Axis)
@@ -340,23 +343,27 @@ class Text(Node):
 	def paint(self, canvas: Canvas):
 		super().paint(canvas)
 
-		x = self._rect.left + self._padding[Direction.LEFT].computed
-		if self._place_text_horz.value != TextPlaceHorz.LEFT:
-			remaining = self._rect.w - self._axial_padding[Axis.HORIZONTAL] - len(self._text.computed[0])
-			if self._place_text_horz.value == TextPlaceHorz.CENTER:
+		rect = self._rect
+		text_lines = self._text.computed
+		place_horz = self._place_text_horz.value
+		x = rect.left + self._padding[Direction.LEFT].computed
+		if place_horz != TextPlaceHorz.LEFT:
+			remaining = rect.w - self._axial_padding[Axis.HORIZONTAL] - len(text_lines[0])
+			
+			if place_horz == TextPlaceHorz.RIGHT:
 				x += int(remaining / 2)
-
 			else:
 				x += remaining
 
-		y = self._rect.top + self._padding[Direction.TOP].computed
-		if self._place_text_vert.value != TextPlaceVert.TOP:
-			remaining = self._rect.h - self._axial_padding[Axis.VERTICAL] - len(self._text.computed)
-			if self._place_text_vert.value == TextPlaceVert.CENTER:
+		place_vert = self._place_text_vert.value
+		y = rect.top + self._padding[Direction.TOP].computed
+		if place_vert != TextPlaceVert.TOP:
+			remaining = rect.h - self._axial_padding[Axis.VERTICAL] - len(text_lines)
+			
+			if place_vert == TextPlaceVert.CENTER:
 				y += int(remaining / 2)
-
 			else:
 				y += remaining
 
-		for line in self._text.computed:
+		for line in text_lines:
 			canvas.drawText(line, x, y, self._z_index.value)

@@ -25,16 +25,18 @@ class Canvas:
 	def drawHLine(self, char: str, x1: int, x2: int, y: int, z: int):
 		self._ensureLayerExists(z)
 		x2 += 1 # bc end is non-inclusive
-		start = x1 + y * self.width
-		end = x2 + y * self.width
+		width = self.width
+		start = x1 + y * width
+		end = x2 + y * width
 		self.pixels[z][start:end] = [char] * (x2 - x1)
 
 	def drawVLine(self, char: str, x: int, y1: int, y2: int, z: int):
 		self._ensureLayerExists(z)
 		y2 += 1 # bc end is non-inclusive
-		start = x + y1 * self.width
-		end = x + y2 * self.width
-		self.pixels[z][start:end:self.width] = [char] * (y2 - y1)
+		width = self.width
+		start = x + y1 * width
+		end = x + y2 * width
+		self.pixels[z][start:end:width] = [char] * (y2 - y1)
 
 	def drawChar(self, char: str, x: int, y: int, z: int):
 		self._ensureLayerExists(z)
@@ -47,9 +49,12 @@ class Canvas:
 		self.pixels[z][start:end] = list(text)
 
 	def compress(self):
-		compressed = [' '] * (self.width * self.height)
-		for n in range(self.width * self.height):
-			for layer in reversed(self.pixels):
+		pixels = self.pixels
+		size = self.width * self.height
+		compressed = [' '] * size
+		
+		for n in range(size):
+			for layer in reversed(pixels):
 				if layer[n] is not None:
 					compressed[n] = layer[n]
 					break
