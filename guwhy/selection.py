@@ -1,24 +1,31 @@
 
 from __future__ import annotations
 
+# External
 from enum import Enum, auto
 from typing import Callable
+
+# Internal
 from .nodes import *
 
-# -----------------------------------> Tokens (unchanged)
+# Types
+type SelectionSet = set[Node]
+type Operation = Callable[[SelectionSet], SelectionSet]
+
+# -----------------------------------> Tokens
 
 class TokenType(Enum):
-	ANY        = auto()
-	ID         = auto()
-	CLASS      = auto()
-	CONTEXT    = auto()
-	CHILDREN   = auto()
-	PARENTS    = auto()
-	SIBLINGS   = auto()
-	PREV       = auto()
-	NEXT       = auto()
+	ANY = auto()
+	ID = auto()
+	CLASS = auto()
+	CONTEXT = auto()
+	CHILDREN = auto()
+	PARENTS = auto()
+	SIBLINGS = auto()
+	PREV = auto()
+	NEXT = auto()
 	WHITESPACE = auto()
-	KEY        = auto()
+	KEY = auto()
 
 class Token:
 	__slots__ = 'type', 'raw', 'end'
@@ -29,12 +36,7 @@ class Token:
 		self.end  = end
 
 # -----------------------------------> Operations
-# An Operation is just a callable: set[Node] -> set[Node]
 
-SelectionSet = set[Node]
-Operation = Callable[[SelectionSet], SelectionSet]
-
-# Static (no parameters)
 def _op_descendants(s: SelectionSet) -> SelectionSet:
 	return {d for n in s if isinstance(n, Box) for d in n._descendants}
 
@@ -65,7 +67,6 @@ def _op_even(s: SelectionSet) -> SelectionSet:
 def _op_odd(s: SelectionSet) -> SelectionSet:
 	return {n for n in s if n._index % 2 == 1}
 
-# Parameterized factories
 def _op_with_id(id: str) -> Operation:
 	return lambda s: {n for n in s if n._id == id}
 
@@ -73,7 +74,7 @@ def _op_with_class(cls: str) -> Operation:
 	return lambda s: {n for n in s if cls in n._classlist}
 
 def _op_type(t: type) -> Operation:
-    return lambda s: {n for n in s if isinstance(n, t)}
+	return lambda s: {n for n in s if isinstance(n, t)}
 
 # -----------------------------------> Lookup tables
 
@@ -92,7 +93,7 @@ _RESERVED = {
 
 _TYPE_OPS = {
 	'box': _op_type(Box),
-    'text': _op_type(Text)
+	'text': _op_type(Text)
 }
 
 _CONTEXT_OPS = {

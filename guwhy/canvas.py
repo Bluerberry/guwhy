@@ -28,7 +28,7 @@ class Canvas:
 		start = x1 + y * self.width
 		end = x2 + y * self.width
 		self.pixels[z][start:end] = [char] * (x2 - x1)
-	
+
 	def drawVLine(self, char: str, x: int, y1: int, y2: int, z: int):
 		self._ensureLayerExists(z)
 		y2 += 1 # bc end is non-inclusive
@@ -45,7 +45,7 @@ class Canvas:
 		start = x + y * self.width
 		end = start + len(text)
 		self.pixels[z][start:end] = list(text)
-	
+
 	def compress(self):
 		compressed = [' '] * (self.width * self.height)
 		for n in range(self.width * self.height):
@@ -55,4 +55,3 @@ class Canvas:
 					break
 
 		return compressed
-	

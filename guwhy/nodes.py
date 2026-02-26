@@ -7,13 +7,36 @@ from typing import Optional
 # Internal
 from .properties import *
 from .canvas import *
+from .literals import *
 
-# maps (h-border, v-border) -> corner
-CORNERS = {
-	'top-left': {('single','single'): '┌', ('double','double'): '╔', ('single','double'): '╓', ('double','single'): '╒'},
-	'top-right': {('single','single'): '┐', ('double','double'): '╗', ('single','double'): '╖', ('double','single'): '╕'},
-	'bottom-left': {('single','single'): '└', ('double','double'): '╚', ('single','double'): '╙', ('double','single'): '╘'},
-	'bottom-right': {('single','single'): '┘', ('double','double'): '╝', ('single','double'): '╜', ('double','single'): '╛'},
+# Maps
+_HLINE = { NodeBorder.SINGLE: '─', NodeBorder.DOUBLE: '═' }
+_VLINE = { NodeBorder.SINGLE: '│', NodeBorder.DOUBLE: '║' }
+_CORNERS = {
+	(Direction.TOP, Direction.LEFT): {
+		(NodeBorder.SINGLE, NodeBorder.SINGLE): '┌',
+		(NodeBorder.DOUBLE, NodeBorder.DOUBLE): '╔',
+		(NodeBorder.SINGLE, NodeBorder.DOUBLE): '╓',
+		(NodeBorder.DOUBLE, NodeBorder.SINGLE): '╒'
+	},
+	(Direction.TOP, Direction.RIGHT): {
+		(NodeBorder.SINGLE, NodeBorder.SINGLE): '┐',
+		(NodeBorder.DOUBLE, NodeBorder.DOUBLE): '╗',
+		(NodeBorder.SINGLE, NodeBorder.DOUBLE): '╖',
+		(NodeBorder.DOUBLE, NodeBorder.SINGLE): '╕'
+	},
+	(Direction.BOTTOM, Direction.LEFT): {
+		(NodeBorder.SINGLE, NodeBorder.SINGLE): '└',
+		(NodeBorder.DOUBLE, NodeBorder.DOUBLE): '╚',
+		(NodeBorder.SINGLE, NodeBorder.DOUBLE): '╙',
+		(NodeBorder.DOUBLE, NodeBorder.SINGLE): '╘'
+	},
+	(Direction.BOTTOM, Direction.RIGHT): {
+		(NodeBorder.SINGLE, NodeBorder.SINGLE): '┘',
+		(NodeBorder.DOUBLE, NodeBorder.DOUBLE): '╝',
+		(NodeBorder.SINGLE, NodeBorder.DOUBLE): '╜',
+		(NodeBorder.DOUBLE, NodeBorder.SINGLE): '╛'
+	}
 }
 
 # ----------------------------------> Clip rect
@@ -35,7 +58,7 @@ class Rect:
 		rect.left = left
 
 		return rect
-	
+
 	@staticmethod
 	def fromOriginAndSize(x: int, y: int, w: int, h: int) -> Rect:
 		rect = Rect()
@@ -51,80 +74,79 @@ class Rect:
 
 		return rect
 
-	def intersect(self, other: Rect, overflow: CardinalProperty) -> Rect:
+	def intersect(self, other: Rect, overflow: DirectionalProperty) -> Rect:
 		top = self.top
 		right = self.right
 		bottom = self.bottom
 		left = self.left
 
-		if overflow['top'].value == 'hide' and other.top > self.top:
+		if overflow[Direction.TOP].value == NodeOverflow.HIDE and other.top > self.top:
 			top = other.top
-		if overflow['right'].value == 'hide' and other.right < self.right:
+		if overflow[Direction.RIGHT].value == NodeOverflow.HIDE and other.right < self.right:
 			right = other.right
-		if overflow['bottom'].value == 'hide' and other.bottom < self.bottom:
+		if overflow[Direction.BOTTOM].value == NodeOverflow.HIDE and other.bottom < self.bottom:
 			bottom = other.bottom
-		if overflow['left'].value == 'hide' and other.left > self.left:
+		if overflow[Direction.LEFT].value == NodeOverflow.HIDE and other.left > self.left:
 			left = other.left
 
-		return Rect.fromBoundries(top, right, bottom, left)		
+		return Rect.fromBoundries(top, right, bottom, left)
 
 # -----------------------------------> Nodes
 
 class Node:
-	positioning: str = PropertyDescriptor('auto', literals=('auto', 'relative', 'absolute'))
+	id: Optional[str]
+	classlist: list[str]
 
+	positioning: str = PropertyDescriptor('auto', literals=NodePositioning)
 	z_index: str = PropertyDescriptor('0', dimensionless=True)
 
-	position: str = CardinalDescriptor('auto', pixels=True, squares=True, percentages=True, literals=('auto'))
-	top: str = SubDescriptor(position, 'top')
-	right: str = SubDescriptor(position, 'right')
-	bottom: str = SubDescriptor(position, 'bottom')
-	left: str = SubDescriptor(position, 'left')
+	position: str = DirectionalDescriptor('auto', pixels=True, squares=True, percentages=True, literals=NodePosition)
+	top: str = SubDescriptor(position, Direction.TOP)
+	right: str = SubDescriptor(position, Direction.RIGHT)
+	bottom: str = SubDescriptor(position, Direction.BOTTOM)
+	left: str = SubDescriptor(position, Direction.LEFT)
 
 	translate: str = AxialDescriptor('0px 0px', pixels=True, squares=True, percentages=True)
-	translate_x: str = SubDescriptor(translate, 'horizontal')
-	translate_y: str = SubDescriptor(translate, 'vertical')
+	translate_x: str = SubDescriptor(translate, Axis.HORIZONTAL)
+	translate_y: str = SubDescriptor(translate, Axis.VERTICAL)
 
-	overflow: str =  CardinalDescriptor('show', literals=('hide', 'show'))
-	overflow_top: str = SubDescriptor(overflow, 'top')
-	overflow_right: str = SubDescriptor(overflow, 'right')
-	overflow_bottom: str = SubDescriptor(overflow, 'bottom')
-	overflow_left: str = SubDescriptor(overflow, 'left')
+	overflow: str =  DirectionalDescriptor('show', literals=NodeOverflow)
+	overflow_top: str = SubDescriptor(overflow, Direction.TOP)
+	overflow_right: str = SubDescriptor(overflow, Direction.RIGHT)
+	overflow_bottom: str = SubDescriptor(overflow, Direction.BOTTOM)
+	overflow_left: str = SubDescriptor(overflow, Direction.LEFT)
 
-	size: str = AxialDescriptor('fit', pixels=True, squares=True, percentages=True, literals=('grow', 'fit'))
-	width: str = SubDescriptor(size, 'horizontal')
-	height: str = SubDescriptor(size, 'vertical')
+	size: str = AxialDescriptor('fit', pixels=True, squares=True, percentages=True, literals=NodeSize)
+	width: str = SubDescriptor(size, Axis.HORIZONTAL)
+	height: str = SubDescriptor(size, Axis.VERTICAL)
 
-	min_size: str = AxialDescriptor('none', pixels=True, squares=True, percentages=True, literals=('none'))
-	min_width: str = SubDescriptor(min_size, 'horizontal')
-	min_height: str = SubDescriptor(min_size, 'vertical')
+	min_size: str = AxialDescriptor('none', pixels=True, squares=True, percentages=True, literals=NodeMinSize)
+	min_width: str = SubDescriptor(min_size, Axis.HORIZONTAL)
+	min_height: str = SubDescriptor(min_size, Axis.VERTICAL)
 
-	max_size: str = AxialDescriptor('none', pixels=True, squares=True, percentages=True, literals=('none'))
-	max_width: str = SubDescriptor(max_size, 'horizontal')
-	max_height: str = SubDescriptor(max_size, 'vertical')
+	max_size: str = AxialDescriptor('none', pixels=True, squares=True, percentages=True, literals=NodeMaxSize)
+	max_width: str = SubDescriptor(max_size, Axis.HORIZONTAL)
+	max_height: str = SubDescriptor(max_size, Axis.VERTICAL)
 
-	margin: str = CardinalDescriptor('0px', pixels=True, squares=True)
-	margin_top: str = SubDescriptor(margin, 'top')
-	margin_right: str = SubDescriptor(margin, 'right')
-	margin_bottom: str = SubDescriptor(margin, 'bottom')
-	margin_left: str = SubDescriptor(margin, 'left')
+	margin: str = DirectionalDescriptor('0px', pixels=True, squares=True)
+	margin_top: str = SubDescriptor(margin, Direction.TOP)
+	margin_right: str = SubDescriptor(margin, Direction.RIGHT)
+	margin_bottom: str = SubDescriptor(margin, Direction.BOTTOM)
+	margin_left: str = SubDescriptor(margin, Direction.LEFT)
 
-	padding: str = CardinalDescriptor('0px',pixels=True, squares=True)
-	padding_top: str = SubDescriptor(padding, 'top')
-	padding_right: str = SubDescriptor(padding, 'right')
-	padding_bottom: str = SubDescriptor(padding, 'bottom')
-	padding_left: str = SubDescriptor(padding, 'left')
+	padding: str = DirectionalDescriptor('0px',pixels=True, squares=True)
+	padding_top: str = SubDescriptor(padding, Direction.TOP)
+	padding_right: str = SubDescriptor(padding, Direction.RIGHT)
+	padding_bottom: str = SubDescriptor(padding, Direction.BOTTOM)
+	padding_left: str = SubDescriptor(padding, Direction.LEFT)
 
-	border: str = CardinalDescriptor('none', literals=('none', 'single', 'double'))
-	border_top: str = SubDescriptor(border, 'top')
-	border_right: str = SubDescriptor(border, 'right')
-	border_bottom: str = SubDescriptor(border, 'bottom')
-	border_left: str = SubDescriptor(border, 'left')
+	border: str = DirectionalDescriptor('none', literals=NodeBorder)
+	border_top: str = SubDescriptor(border, Direction.TOP)
+	border_right: str = SubDescriptor(border, Direction.RIGHT)
+	border_bottom: str = SubDescriptor(border, Direction.BOTTOM)
+	border_left: str = SubDescriptor(border, Direction.LEFT)
 
-	place_self_across: str = PropertyDescriptor('inherit', literals=('inherit', 'start', 'center', 'end'))
-
-	_id: Optional[str]
-	_classlist: list[str]
+	place_self_across: str = PropertyDescriptor('inherit', literals=NodePlaceSelf)
 
 	_parent: Optional[Box] = None
 	_index: Optional[int] = None
@@ -132,20 +154,20 @@ class Node:
 	_prev: Optional[Node] = None
 
 	_origin: AxialInteger
-	_rect: Rect
-	_clip: Rect
-
 	_axial_margin: AxialInteger
 	_axial_padding: AxialInteger
 	_axial_border: AxialInteger
 
+	_rect: Rect
+	_clip: Rect
+
 	def __init__(self, id=None, classlist=None, **kwargs):
 
 		# Setup privates
-		self._origin = { 'horizontal': None, 'vertical': None }
-		self._axial_margin = { 'horizontal': None, 'vertical': None }
-		self._axial_padding = { 'horizontal': None, 'vertical': None }
-		self._axial_border = { 'horizontal': None, 'vertical': None }
+		self._origin = { Axis.HORIZONTAL: None, Axis.VERTICAL: None }
+		self._axial_margin = { Axis.HORIZONTAL: None, Axis.VERTICAL: None }
+		self._axial_padding = { Axis.HORIZONTAL: None, Axis.VERTICAL: None }
+		self._axial_border = { Axis.HORIZONTAL: None, Axis.VERTICAL: None }
 
 		# Setup descriptors
 		for descriptor in self.__class__.__descriptors__:
@@ -159,7 +181,7 @@ class Node:
 		self.applyStyles(**kwargs)
 
 	def __repr__(self):
-		return f'Node ({self._origin["horizontal"]}, {self._origin["vertical"]}) {self._size["horizontal"].computed}x{self._size["vertical"].computed}'
+		return f'Node ({self._origin[Axis.HORIZONTAL]}, {self._origin[Axis.VERTICAL]}) {self._size[Axis.HORIZONTAL].computed}x{self._size[Axis.VERTICAL].computed}'
 
 	def setParent(self, value: Optional[Box]):
 		if value == self._parent:
@@ -171,108 +193,49 @@ class Node:
 
 	def applyStyles(self, **kwargs):
 		for key, value in kwargs.items():
-			if key.startswith('_') or not hasattr(self, key):
+			if key not in  self.__class__.__styles__:
 				raise ValueError(f'Unknown style: {key}')
 			setattr(self, key, value)
 
 	def paint(self, canvas: Canvas):
-		top_border = self._border['top'].value
-		right_border = self._border['right'].value
-		bottom_border = self._border['bottom'].value
-		left_border = self._border['left'].value
-
-		top_visible = False
-		right_visible = False
-		bottom_visible = False
-		left_visible = False
-
-		if top_border != 'none' and self._clip.top <= self._rect.top <= self._clip.bottom:
-			top_visible = True
-
-			if self._rect.w > 2:
-				canvas.drawHLine(
-					'─' if top_border == 'single' else '═',
-					self._clip.left,
-					self._clip.right,
-					self._clip.top,
-					self._z_index.value
-				)
-
-		if right_border != 'none' and self._clip.left <= self._rect.right <= self._clip.right:
-			right_visible = True
-
-			if self._rect.h > 2:
-				canvas.drawVLine(
-					'│' if right_border == 'single' else '║',
-					self._clip.right,
-					self._clip.top,
-					self._clip.bottom,
-					self._z_index.value
-				)
-
-		if bottom_border != 'none' and self._clip.top <= self._rect.bottom <= self._clip.bottom:
-			bottom_visible = True
-
-			if self._rect.w > 2:
-				canvas.drawHLine(
-					'─' if bottom_border == 'single' else '═',
-					self._clip.left,
-					self._clip.right,
-					self._clip.bottom,
-					self._z_index.value
-				)
-
-		if left_border != 'none' and self._clip.left <= self._rect.left <= self._clip.right:
-			left_visible = True
-
-			if self._rect.h > 2:
-				canvas.drawVLine(
-					'│' if left_border == 'single' else '║',
-					self._clip.left,
-					self._clip.top,
-					self._clip.bottom,
-					self._z_index.value
-				)
-
-		if top_visible:
-			if left_visible:
-				canvas.drawChar(
-					CORNERS['top-left'][(top_border, left_border)],
-					self._clip.left,
-					self._clip.top,
-					self._z_index.value
-				)
-
-			if right_visible:
-				canvas.drawChar(
-					CORNERS['top-right'][(top_border, right_border)],
-					self._clip.right,
-					self._clip.top,
-					self._z_index.value
-				)
-
-		if bottom_visible:
-			if left_visible:
-				canvas.drawChar(
-					CORNERS['bottom-left'][(bottom_border, left_border)],
-					self._clip.left,
-					self._clip.bottom,
-					self._z_index.value
-				)
-
-			if right_visible:
-				canvas.drawChar(
-					CORNERS['bottom-right'][(bottom_border, right_border)],
-					self._clip.right,
-					self._clip.bottom,
-					self._z_index.value
-				)
+		top = self._border[Direction.TOP].value
+		right = self._border[Direction.RIGHT].value
+		bottom = self._border[Direction.BOTTOM].value
+		left = self._border[Direction.LEFT].value
 		
+		top_vis = top != NodeBorder.NONE and self._clip.top <= self._rect.top <= self._clip.bottom
+		right_vis = right != NodeBorder.NONE and self._clip.left <= self._rect.right <= self._clip.right
+		bottom_vis = bottom != NodeBorder.NONE and self._clip.top <= self._rect.bottom <= self._clip.bottom
+		left_vis = left != NodeBorder.NONE and self._clip.left <= self._rect.left <= self._clip.right
+		
+		# Draw sides
+		if top_vis and self._rect.w > 2:
+			canvas.drawHLine(_HLINE[top], self._clip.left,  self._clip.right,  self._clip.top, self._z_index.value)
+		if bottom_vis and self._rect.w > 2:
+			canvas.drawHLine(_HLINE[bottom], self._clip.left,  self._clip.right, self._clip.bottom, self._z_index.value)
+		if right_vis and self._rect.h > 2:
+			canvas.drawVLine(_VLINE[right], self._clip.right, self._clip.top, self._clip.bottom, self._z_index.value)
+		if left_vis and self._rect.h > 2:
+			canvas.drawVLine(_VLINE[left], self._clip.left,  self._clip.top, self._clip.bottom, self._z_index.value)
+		
+		# Draw corners
+		if top_vis:
+			if left_vis:
+				canvas.drawChar(_CORNERS[(Direction.TOP, Direction.LEFT)][(top, left)], self._clip.left,  self._clip.top, self._z_index.value)
+			if right_vis:
+				canvas.drawChar(_CORNERS[(Direction.TOP, Direction.RIGHT)][(top, right)], self._clip.right, self._clip.top, self._z_index.value)
+
+		if bottom_vis:
+			if left_vis:
+				canvas.drawChar(_CORNERS[(Direction.BOTTOM, Direction.LEFT)][(bottom, left)], self._clip.left,  self._clip.bottom, self._z_index.value)
+			if right_vis:
+				canvas.drawChar(_CORNERS[(Direction.BOTTOM, Direction.RIGHT)][(bottom, right)], self._clip.right, self._clip.bottom, self._z_index.value)
+
 class Box(Node):
-	layout: str = PropertyDescriptor('vertical', literals=('horizontal', 'vertical'))
-	place_content_along: str = PropertyDescriptor('start', literals=('start', 'center', 'end'))
-	place_content_across: str = PropertyDescriptor('start', literals=('start', 'center', 'end'))
-	child_gap: str = PropertyDescriptor('0px', pixels=True, squares=True, literals=('auto'))
+	axis: str = PropertyDescriptor('vertical', literals=Axis)
+	place_content_along: str = PropertyDescriptor('start', literals=BoxPlaceContent)
+	place_content_across: str = PropertyDescriptor('start', literals=BoxPlaceContent)
+	child_gap: str = PropertyDescriptor('0px', pixels=True, squares=True, literals=BoxChildGap)
 
 	_children: list[Node]
 	_descendants: set[Node]
@@ -288,7 +251,7 @@ class Box(Node):
 			self.addChild(child)
 
 	def __repr__(self):
-		result = f'Box ({self._origin["horizontal"]}, {self._origin["vertical"]}) {self._size["horizontal"].computed}x{self._size["vertical"].computed}'
+		result = f'Box ({self._origin[Axis.HORIZONTAL]}, {self._origin[Axis.VERTICAL]}) {self._size[Axis.HORIZONTAL].computed}x{self._size[Axis.VERTICAL].computed}'
 		for child in self._children:
 			result += '\n  ' + '\n  '.join(child.__repr__().splitlines())
 		return result
@@ -296,10 +259,10 @@ class Box(Node):
 	def addChild(self, child: Node):
 		if child in self._children:
 			return
-		
+
 		# Prevent cycles: child cannot be self or an ancestor of self
 		if child is self or (isinstance(child, Box) and self in child._descendants):
-			raise ValueError("Cannot add an ancestor as a child (cyclic hierarchy)")
+			raise ValueError('Cannot add an ancestor as a child (cyclic hierarchy)')
 
 		# Detatch child from old parent
 		if child._parent is not None:
@@ -363,34 +326,33 @@ class Box(Node):
 
 class Text(Node):
 	text: str = PropertyDescriptor('', strings=True)
-
-	wrap_text: str = PropertyDescriptor('word', literals=('none', 'char', 'word'))
-	align_text: str = PropertyDescriptor('left', literals=('left', 'center', 'right'))
-	place_text_horz: str = PropertyDescriptor('left', literals=('left', 'center', 'right'))
-	place_text_vert: str = PropertyDescriptor('top', literals=('top', 'center', 'bottom'))
+	wrap_text: str = PropertyDescriptor('word', literals=TextWrap)
+	align_text: str = PropertyDescriptor('left', literals=TextAlign)
+	place_text_horz: str = PropertyDescriptor('left', literals=TextPlaceHorz)
+	place_text_vert: str = PropertyDescriptor('top', literals=TextPlaceVert)
 
 	def __init__(self, **kwargs):
 		super().__init__(**kwargs)
 
 	def __repr__(self):
-		return f'Text ({self._origin["horizontal"]}, {self._origin["vertical"]}) {self._size["horizontal"].computed}x{self._size["vertical"].computed}'
+		return f'Text ({self._origin[Axis.HORIZONTAL]}, {self._origin[Axis.VERTICAL]}) {self._size[Axis.HORIZONTAL].computed}x{self._size[Axis.VERTICAL].computed}'
 
 	def paint(self, canvas: Canvas):
 		super().paint(canvas)
 
-		x = self._rect.left + self._padding['left'].computed
-		if self._place_text_horz.value != 'left':
-			remaining = self._rect.w - self._axial_padding['horizontal'] - len(self._text.computed[0])
-			if self._place_text_horz.value == 'center':
+		x = self._rect.left + self._padding[Direction.LEFT].computed
+		if self._place_text_horz.value != TextPlaceHorz.LEFT:
+			remaining = self._rect.w - self._axial_padding[Axis.HORIZONTAL] - len(self._text.computed[0])
+			if self._place_text_horz.value == TextPlaceHorz.CENTER:
 				x += int(remaining / 2)
 
 			else:
 				x += remaining
 
-		y = self._rect.top + self._padding['top'].computed
-		if self._place_text_vert.value != 'top':
-			remaining = self._rect.h - self._axial_padding['vertical'] - len(self._text.computed)
-			if self._place_text_vert.value == 'center':
+		y = self._rect.top + self._padding[Direction.TOP].computed
+		if self._place_text_vert.value != TextPlaceVert.TOP:
+			remaining = self._rect.h - self._axial_padding[Axis.VERTICAL] - len(self._text.computed)
+			if self._place_text_vert.value == TextPlaceVert.CENTER:
 				y += int(remaining / 2)
 
 			else:

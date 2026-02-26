@@ -5,7 +5,7 @@
     - `vertical` The second axial property
     - `along` The axis aligned with the layout axis
     - `across` The axis perpendicular to the layout axis
-- `cardinal` Cardinal properties have 4 values, two for each axis.
+- `cardinal` Directional properties have 4 values, two for each axis.
     - `top` The first vertical property
     - `right` The second horizontal property
     - `bottom` The second vertical property
