@@ -37,9 +37,9 @@ class Layout(Box):
 	@staticmethod
 	def _wrapChar(lines: list[str], width: int) -> list[str]:
 		result = []
-		for content in lines:
-			for n in range(0, len(content), width):
-				result.append(content[n:n + width])
+		for line in lines:
+			for n in range(0, len(line), width):
+				result.append(line[n:n + width])
 
 		return result
 
@@ -51,24 +51,24 @@ class Layout(Box):
 			if not words:
 				result.append('')
 				continue
-
+			
+			line: list[str] = []
 			remaining = width
-			line = [words.pop(0)]
-
+	
 			for word in words:
 				wlen = len(word)
-				if wlen + 1 > remaining:
-					remaining = width - wlen
+				needed = wlen if not line else wlen + 1  # +1 for the space separator
+				if needed > remaining and line:
 					result.append(' '.join(line))
 					line = [word]
-					continue
-
-				remaining -= wlen + 1
-				line.append(word)
-
+					remaining = width - wlen
+				else:
+					line.append(word)
+					remaining -= needed
+	
 			if line:
 				result.append(' '.join(line))
-
+	
 		return result
 
 	@staticmethod
@@ -224,7 +224,7 @@ class Layout(Box):
 		text.computed = Layout._wrapLines(
 			node._wrap_text.value,
 			text.computed,
-			node._size[Axis.HORIZONTAL].computed
+			node._size[Axis.HORIZONTAL].computed - node._axial_border[Axis.VERTICAL] - node._axial_padding[Axis.VERTICAL]
 		)
 
 		text.computed = Layout._alignText(
@@ -365,10 +365,10 @@ class Layout(Box):
 
 	def _computeAutoPositionAlong(self, parent: Box, axis: Axis, offset: int):
 		automatic_children = parent._automatic_children
-		place_content_along = parent._place_content_along
+		place_children_along = parent._place_children_along
 		child_gap = parent._child_gap
 
-		if place_content_along.value != BoxPlaceContent.START:
+		if place_children_along.value != BoxPlaceContent.START:
 			remaining = parent._size[axis].computed - parent._axial_padding[axis] - parent._axial_border[axis]
 			gaps = len(automatic_children) - 1
 
@@ -377,7 +377,7 @@ class Layout(Box):
 			for child in automatic_children:
 				remaining -= child._size[axis].computed + child._axial_margin[axis]
 
-			if place_content_along.value == BoxPlaceContent.CENTER:
+			if place_children_along.value == BoxPlaceContent.CENTER:
 				offset += int(remaining / 2)
 			else:
 				offset += remaining
@@ -392,10 +392,10 @@ class Layout(Box):
 			offset += child._size[axis].computed + child._axial_margin[axis] + child_gap.computed
 
 	def _computeAutoPositionAcross(self, parent: Box, axis: Axis, offset: int):
-		parent_size = parent._size[axis]
-		parent_border = parent._axial_border[axis]
+		inherit_place_self_across = _PLACE_SELF[parent._place_children_across.value]
 		parent_padding = parent._axial_padding[axis]
-		inherit_place_self_across = _PLACE_SELF[parent._place_content_across.value]
+		parent_border = parent._axial_border[axis]
+		parent_size = parent._size[axis]
 
 		for child in parent._automatic_children:
 			child._origin[axis] = (
@@ -426,6 +426,9 @@ class Layout(Box):
 					child._origin[axis] += remaining
 
 	def _computeRect(self, node: Node):
+		if isinstance(node, Text) and node.text == 'Card 5: Some longer descriptive content here':
+			pass
+
 		node._rect = Rect.fromOriginAndSize(
 			node._origin[Axis.HORIZONTAL],
 			node._origin[Axis.VERTICAL],
@@ -461,7 +464,14 @@ class Layout(Box):
 			if isinstance(node, Box):
 				self._computeRelativeSize(node, Axis.HORIZONTAL)
 				self._computeDynamicSize(node, Axis.HORIZONTAL)
-				self._computePosition(node, Axis.HORIZONTAL)
+
+				offset = self._computePositionOffset(node, Axis.HORIZONTAL)
+				self._computeManualPosition(node, Axis.HORIZONTAL, offset)
+
+				if node._axis.value == Axis.HORIZONTAL:
+					self._computeAutoPositionAlong(node, Axis.HORIZONTAL, offset)
+				else:
+					self._computeAutoPositionAcross(node, Axis.HORIZONTAL, offset)
 
 		# Compute vertical axis
 		for node in post:
@@ -476,8 +486,11 @@ class Layout(Box):
 
 				offset = self._computePositionOffset(node, Axis.VERTICAL)
 				self._computeManualPosition(node, Axis.VERTICAL, offset)
-				self._computeAutoPositionAlong(node, Axis.VERTICAL, offset)
-				self._computeAutoPositionAcross(node, Axis.VERTICAL, offset)
+				
+				if node._axis.value == Axis.VERTICAL:
+					self._computeAutoPositionAlong(node, Axis.VERTICAL, offset)
+				else:
+					self._computeAutoPositionAcross(node, Axis.VERTICAL, offset)
 
 		# Compute rects
 		for node in pre:

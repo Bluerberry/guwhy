@@ -9,6 +9,9 @@ from .properties import *
 from .literals import *
 from .canvas import *
 
+# Types
+type AxialInteger = dict[Axis, int]
+
 # Maps
 _HLINE = { NodeBorder.SINGLE: '─', NodeBorder.DOUBLE: '═' }
 _VLINE = { NodeBorder.SINGLE: '│', NodeBorder.DOUBLE: '║' }
@@ -108,7 +111,7 @@ class Node:
 	translate_x: str = SubDescriptor(translate, Axis.HORIZONTAL)
 	translate_y: str = SubDescriptor(translate, Axis.VERTICAL)
 
-	overflow: str =  DirectionalDescriptor('show', literals=NodeOverflow)
+	overflow: str =  DirectionalDescriptor('hide', literals=NodeOverflow)
 	overflow_top: str = SubDescriptor(overflow, Direction.TOP)
 	overflow_right: str = SubDescriptor(overflow, Direction.RIGHT)
 	overflow_bottom: str = SubDescriptor(overflow, Direction.BOTTOM)
@@ -216,13 +219,13 @@ class Node:
 		left_visible = left != NodeBorder.NONE and clip.left <= rect.left <= clip.right
 
 		# Draw sides
-		if top_visible and rect.w > 2:
+		if top_visible:
 			canvas.drawHLine(_HLINE[top], clip.left,  clip.right,  clip.top, z)
-		if bottom_visible and rect.w > 2:
+		if bottom_visible:
 			canvas.drawHLine(_HLINE[bottom], clip.left,  clip.right, clip.bottom, z)
-		if right_visible and rect.h > 2:
+		if right_visible:
 			canvas.drawVLine(_VLINE[right], clip.right, clip.top, clip.bottom, z)
-		if left_visible and rect.h > 2:
+		if left_visible:
 			canvas.drawVLine(_VLINE[left], clip.left,  clip.top, clip.bottom, z)
 
 		# Draw corners
@@ -254,8 +257,8 @@ class Node:
 
 class Box(Node):
 	axis: str = PropertyDescriptor('vertical', literals=Axis)
-	place_content_along: str = PropertyDescriptor('start', literals=BoxPlaceContent)
-	place_content_across: str = PropertyDescriptor('start', literals=BoxPlaceContent)
+	place_children_along: str = PropertyDescriptor('start', literals=BoxPlaceContent)
+	place_children_across: str = PropertyDescriptor('start', literals=BoxPlaceContent)
 	child_gap: str = PropertyDescriptor('0px', pixels=True, squares=True, literals=BoxChildGap)
 
 	_children: list[Node]
@@ -365,8 +368,9 @@ class Text(Node):
 
 		rect = self._rect
 		text_lines = self._text.computed
+
 		place_horz = self._place_text_horz.value
-		x = rect.left + self._padding[Direction.LEFT].computed
+		x = rect.left + self._padding[Direction.LEFT].computed # THIS IS INCORRECT, SHOULD ACCOUNT FOR BORDER, SEE NOTE
 		if place_horz != TextPlaceHorz.LEFT:
 			remaining = rect.w - self._axial_padding[Axis.HORIZONTAL] - len(text_lines[0])
 
@@ -376,7 +380,7 @@ class Text(Node):
 				x += remaining
 
 		place_vert = self._place_text_vert.value
-		y = rect.top + self._padding[Direction.TOP].computed
+		y = rect.top + self._padding[Direction.TOP].computed  # THIS IS INCORRECT, SHOULD ACCOUNT FOR BORDER, SEE NOTE
 		if place_vert != TextPlaceVert.TOP:
 			remaining = rect.h - self._axial_padding[Axis.VERTICAL] - len(text_lines)
 
@@ -387,3 +391,9 @@ class Text(Node):
 
 		for line in text_lines:
 			canvas.drawText(line, x, y, self._z_index.value)
+			y += 1
+
+"""
+NOTE
+we might benefit from keeping track of an outer and inner size, and outer and inner origin.
+"""

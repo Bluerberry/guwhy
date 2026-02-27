@@ -24,6 +24,7 @@ class TokenType(Enum):
 	SIBLINGS = auto()
 	PREV = auto()
 	NEXT = auto()
+	THIS = auto()
 	WHITESPACE = auto()
 	KEY = auto()
 
@@ -81,6 +82,9 @@ def _selectNext(selection: SelectionSet) -> SelectionSet:
 		for node in selection
 		if node._next is not None
 	}
+
+def _selectThis(selection: SelectionSet) -> SelectionSet:
+	return selection
 
 def _selectFirstChild(selection: SelectionSet) -> SelectionSet:
 	return {
@@ -143,6 +147,7 @@ _RESERVED = {
 	'~': TokenType.SIBLINGS,
 	'-': TokenType.PREV,
 	'+': TokenType.NEXT,
+	'&': TokenType.THIS,
 	' ': TokenType.WHITESPACE,
 }
 
@@ -164,6 +169,7 @@ _EXPANDING_OPS = {
 	TokenType.SIBLINGS: _selectSiblings,
 	TokenType.PREV: _selectPrev,
 	TokenType.NEXT: _selectNext,
+	TokenType.THIS: _selectThis,
 }
 
 # -----------------------------------> Parser
@@ -186,6 +192,7 @@ class ParseState(Enum):
 _STATEMACHINE = {
 	(TokenType.ANY,        ParseState.NEUTRAL):            ParseState.NARROWING,
 	(TokenType.KEY,        ParseState.NEUTRAL):            ParseState.NARROWING,
+	(TokenType.THIS,       ParseState.NEUTRAL):            ParseState.NARROWING,
 	(TokenType.ID,         ParseState.NEUTRAL):            ParseState.EXPECT_ID,
 	(TokenType.CLASS,      ParseState.NEUTRAL):            ParseState.EXPECT_CLASS,
 	(TokenType.CONTEXT,    ParseState.NEUTRAL):            ParseState.EXPECT_CONTEXT,
@@ -194,6 +201,8 @@ _STATEMACHINE = {
 	(TokenType.CONTEXT,    ParseState.NARROWING):          ParseState.EXPECT_CONTEXT,
 	(TokenType.WHITESPACE, ParseState.NARROWING):          ParseState.FIRST_WHITESPACE,
 	(TokenType.ANY,        ParseState.FIRST_WHITESPACE):   ParseState.NARROWING,
+	(TokenType.KEY,        ParseState.FIRST_WHITESPACE):   ParseState.NARROWING,
+	(TokenType.THIS,       ParseState.FIRST_WHITESPACE):   ParseState.NARROWING,
 	(TokenType.ID,         ParseState.FIRST_WHITESPACE):   ParseState.EXPECT_ID,
 	(TokenType.CLASS,      ParseState.FIRST_WHITESPACE):   ParseState.EXPECT_CLASS,
 	(TokenType.CONTEXT,    ParseState.FIRST_WHITESPACE):   ParseState.EXPECT_CONTEXT,
@@ -202,13 +211,13 @@ _STATEMACHINE = {
 	(TokenType.SIBLINGS,   ParseState.FIRST_WHITESPACE):   ParseState.EXPANDING,
 	(TokenType.PREV,       ParseState.FIRST_WHITESPACE):   ParseState.EXPANDING,
 	(TokenType.NEXT,       ParseState.FIRST_WHITESPACE):   ParseState.EXPANDING,
-	(TokenType.KEY,        ParseState.FIRST_WHITESPACE):   ParseState.NARROWING,
 	(TokenType.WHITESPACE, ParseState.EXPANDING):          ParseState.SECOND_WHITESPACE,
 	(TokenType.ANY,        ParseState.SECOND_WHITESPACE):  ParseState.NARROWING,
+	(TokenType.KEY,        ParseState.SECOND_WHITESPACE):  ParseState.NARROWING,
+	(TokenType.THIS,       ParseState.SECOND_WHITESPACE):  ParseState.NARROWING,
 	(TokenType.ID,         ParseState.SECOND_WHITESPACE):  ParseState.EXPECT_ID,
 	(TokenType.CLASS,      ParseState.SECOND_WHITESPACE):  ParseState.EXPECT_CLASS,
 	(TokenType.CONTEXT,    ParseState.SECOND_WHITESPACE):  ParseState.EXPECT_CONTEXT,
-	(TokenType.KEY,        ParseState.SECOND_WHITESPACE):  ParseState.NARROWING,
 	(TokenType.KEY,        ParseState.EXPECT_ID):          ParseState.NARROWING,
 	(TokenType.KEY,        ParseState.EXPECT_CLASS):       ParseState.NARROWING,
 	(TokenType.KEY,        ParseState.EXPECT_CONTEXT):     ParseState.NARROWING,

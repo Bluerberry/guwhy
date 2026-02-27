@@ -26,7 +26,6 @@ class Unit(Enum):
 	STRING = auto()
 
 type AxialProperty = dict[Axis, Property]
-type AxialInteger = dict[Axis, int]
 type DirectionalProperty = dict[Direction, Property]
 
 # Regex
@@ -118,11 +117,9 @@ class BaseDescriptor:
 		self.strings = strings
 
 	def __set_name__(self, owner, name):
-		self.attr = f'_{name}'
-
-		# Register descriptor (for setup later)
 		owner.__descriptors__.append(self)
 		owner.__styles__.append(name)
+		self.attr = f'_{name}'
 
 	def setup(self, _):
 		raise NotImplementedError
@@ -131,6 +128,7 @@ class PropertyDescriptor(BaseDescriptor):
 	def __get__(self, instance, _):
 		if instance is None:
 			return self
+
 		attr: Property = getattr(instance, self.attr)
 		return attr.raw
 
@@ -147,6 +145,7 @@ class AxialDescriptor(BaseDescriptor):
 	def __get__(self, instance, _):
 		if instance is None:
 			return self
+
 		attr: AxialProperty = getattr(instance, self.attr)
 		return f'{attr[Axis.HORIZONTAL].raw} {attr[Axis.VERTICAL].raw}'
 
@@ -174,6 +173,7 @@ class DirectionalDescriptor(BaseDescriptor):
 	def __get__(self, instance, _):
 		if instance is None:
 			return self
+
 		attr: DirectionalProperty = getattr(instance, self.attr)
 		return f'{attr[Direction.TOP].raw} {attr[Direction.RIGHT].raw} ' \
 			 + f'{attr[Direction.BOTTOM].raw} {attr[Direction.LEFT].raw}'
@@ -205,21 +205,17 @@ class DirectionalDescriptor(BaseDescriptor):
 		self.__set__(instance, self.default)
 
 class SubDescriptor:
-	attr: str
-
 	def __init__(self, parent: BaseDescriptor, key: Axis | Direction):
 		self.parent = parent
 		self.key = key
 
 	def __set_name__(self, owner, name):
-		self.attr = f'_{name}'
-
-		# Register descriptor (for setup later)
 		owner.__styles__.append(name)
 
 	def __get__(self, instance, _):
 		if instance is None:
 			return self
+
 		attr: AxialProperty | DirectionalProperty = getattr(instance, self.parent.attr)
 		return attr[self.key].raw
 
