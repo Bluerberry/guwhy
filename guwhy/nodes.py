@@ -155,9 +155,11 @@ class Node:
 	_prev: Optional[Node] = None
 
 	_origin: AxialInteger
-	_axial_margin: AxialInteger
-	_axial_padding: AxialInteger
-	_axial_border: AxialInteger
+	_inner_offset: AxialInteger
+	_inner_origin: AxialInteger
+	_inner_size: AxialInteger
+	_outer_offset: AxialInteger
+	_outer_size: AxialInteger
 
 	_rect: Rect
 	_clip: Rect
@@ -169,9 +171,13 @@ class Node:
 
 		# Setup privates
 		self._origin = { Axis.HORIZONTAL: None, Axis.VERTICAL: None }
-		self._axial_margin = { Axis.HORIZONTAL: None, Axis.VERTICAL: None }
-		self._axial_padding = { Axis.HORIZONTAL: None, Axis.VERTICAL: None }
-		self._axial_border = { Axis.HORIZONTAL: None, Axis.VERTICAL: None }
+
+		self._inner_offset = { Axis.HORIZONTAL: None, Axis.VERTICAL: None }
+		self._inner_origin = { Axis.HORIZONTAL: None, Axis.VERTICAL: None }
+		self._inner_size = { Axis.HORIZONTAL: None, Axis.VERTICAL: None }
+
+		self._outer_offset = { Axis.HORIZONTAL: None, Axis.VERTICAL: None }
+		self._outer_size = { Axis.HORIZONTAL: None, Axis.VERTICAL: None }
 
 		# Setup descriptors
 		for descriptor in self.__class__.__descriptors__:
@@ -366,30 +372,25 @@ class Text(Node):
 	def paint(self, canvas: Canvas):
 		super().paint(canvas)
 
-		rect = self._rect
-		text_lines = self._text.computed
+		x = self._inner_origin[Axis.HORIZONTAL]
+		if self._place_text_horz.value != TextPlaceHorz.LEFT:
+			remaining = self._inner_size[Axis.HORIZONTAL] - len(self._text.computed[0])
 
-		place_horz = self._place_text_horz.value
-		x = rect.left + self._padding[Direction.LEFT].computed # THIS IS INCORRECT, SHOULD ACCOUNT FOR BORDER, SEE NOTE
-		if place_horz != TextPlaceHorz.LEFT:
-			remaining = rect.w - self._axial_padding[Axis.HORIZONTAL] - len(text_lines[0])
-
-			if place_horz == TextPlaceHorz.RIGHT:
+			if self._place_text_horz.value == TextPlaceHorz.RIGHT:
 				x += int(remaining / 2)
 			else:
 				x += remaining
 
-		place_vert = self._place_text_vert.value
-		y = rect.top + self._padding[Direction.TOP].computed  # THIS IS INCORRECT, SHOULD ACCOUNT FOR BORDER, SEE NOTE
-		if place_vert != TextPlaceVert.TOP:
-			remaining = rect.h - self._axial_padding[Axis.VERTICAL] - len(text_lines)
+		y = self._inner_origin[Axis.VERTICAL]
+		if self._place_text_vert.value != TextPlaceVert.TOP:
+			remaining = self._inner_size[Axis.VERTICAL] - len(self._text.computed)
 
-			if place_vert == TextPlaceVert.CENTER:
+			if self._place_text_vert.value == TextPlaceVert.CENTER:
 				y += int(remaining / 2)
 			else:
 				y += remaining
 
-		for line in text_lines:
+		for line in self._text.computed:
 			canvas.drawText(line, x, y, self._z_index.value)
 			y += 1
 
