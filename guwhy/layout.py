@@ -197,7 +197,7 @@ class Node:
 	def _computePreferred(self, axis: Axis, root: Node) -> None:
 
 		# Compute preferred size
-		if self.size[axis].value in (NodeSize.GROW, NodeSize.FIT):
+		if self.size[axis].value in (NodeSize.GROW, NodeSize.FIT) or self.size[axis].unit == Unit.PERCENTAGE:
 			self.size[axis].computed += self._inner_offset[axis]
 
 		# Clamp size
@@ -217,7 +217,7 @@ class Node:
 			return
 		if self.parent is None:
 			return
-		if self.parent.size[axis].value not in (NodeSize.GROW, NodeSize.FIT):
+		if self.parent.size[axis].value not in (NodeSize.GROW, NodeSize.FIT) and self.parent.size[axis].unit != Unit.PERCENTAGE:
 			return
 
 		external_size = self.size[axis].computed + self._outer_offset[axis]
@@ -515,7 +515,7 @@ class Box(Node):
 		super()._computeStatic(axis)
 
 		# Compute static properties
-		self.child_gap.computeStatic(axis)
+		self.child_gap.computeStatic(self.axis.value)
 
 		# Sort children by positioning
 		self._automatic_children = []
@@ -527,7 +527,7 @@ class Box(Node):
 
 		# Compute preferred size
 		if self.axis.value == axis:
-			if self.size[axis].value in (NodeSize.GROW, NodeSize.FIT):
+			if self.size[axis].value in (NodeSize.GROW, NodeSize.FIT) or self.size[axis].unit == Unit.PERCENTAGE:
 				if (gaps := len(self._automatic_children) - 1) > 0:
 					self.size[axis].computed += self.child_gap.computed * gaps
 
