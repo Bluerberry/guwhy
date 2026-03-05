@@ -8,7 +8,7 @@ import re as regex
 if TYPE_CHECKING:
 	from .layout import Node
 
-# -----------------------------------> Properties
+# ─────────────────────────────────── Properties ───────────────────────────────────
 
 class Unit(Enum):
 	PIXEL = auto()
@@ -36,16 +36,14 @@ class Property:
 	def computeStatic(self, axis: Axis, default: Any = 0) -> None:
 		if self.unit in (Unit.LITERAL, Unit.PERCENTAGE):
 			self.computed = default
-
 		elif self.unit in (Unit.PIXEL, Unit.DIMENSIONLESS):
 			self.computed = self.value
-
 		elif self.unit == Unit.SQUARE:
 			self.computed = self.value
 			if axis == Axis.HORIZONTAL:
 				self.computed *= 2
 
-# -----------------------------------> Parsing
+# ─────────────────────────────────── Parsing ───────────────────────────────────
 
 _MATCH_PIXELS = regex.compile(r'^(-?[0-9]+)px$')
 _MATCH_SQUARES = regex.compile(r'^(-?[0-9]+)sq$')
@@ -87,7 +85,7 @@ def _parse(descriptor: BaseDescriptor, property: Property, value: str):
 
 	property.unit, property.value = hit
 
-# -----------------------------------> Descriptors
+# ─────────────────────────────────── Descriptors ───────────────────────────────────
 
 class Axis(Enum):
 	HORIZONTAL = 'horizontal'
@@ -119,6 +117,11 @@ class BaseDescriptor:
 		self.strings = strings
 
 	def __set_name__(self, owner: type[Node], name: str):
+		if '__descriptors__' not in owner.__dict__:
+			owner.__descriptors__ = owner.__descriptors__.copy()
+		if '__styles__' not in owner.__dict__:
+			owner.__styles__ = owner.__styles__.copy()
+
 		owner.__descriptors__.append(self)
 		owner.__styles__.append(name)
 		self.name = f'_{name}'
@@ -232,6 +235,8 @@ class SubDescriptor:
 		self.key = key
 
 	def __set_name__(self, owner: type[Node], name: str):
+		if '__styles__' not in owner.__dict__:
+			owner.__styles__ = owner.__styles__.copy()
 		owner.__styles__.append(name)
 
 	@overload

@@ -2,7 +2,7 @@
 # External libraries
 from enum import Enum
 
-# -----------------------------------> Node literals
+# ─────────────────────────────────── Node literals ───────────────────────────────────
 
 class NodeVisibility(Enum):
 	SHOW = 'show'
@@ -47,7 +47,7 @@ class NodeMouseEvents(Enum):
 	CAPTURE = 'capture'
 	NONE = 'none'
 
-# -----------------------------------> Box literals
+# ─────────────────────────────────── Box literals ───────────────────────────────────
 
 class BoxPlaceChildren(Enum):
 	START = 'start'

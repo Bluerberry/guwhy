@@ -5,7 +5,7 @@ from typing import cast
 # Internal libraries
 from .layout import *
 
-# -----------------------------------> Canvas
+# ─────────────────────────────────── Canvas ───────────────────────────────────
 
 class Canvas:
 	def __init__(self, width: int, height: int):

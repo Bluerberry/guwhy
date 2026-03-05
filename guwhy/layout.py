@@ -9,14 +9,17 @@ from .literals import *
 if TYPE_CHECKING:
 	from .canvas import Canvas
 
-# -----------------------------------> Maps
+# ─────────────────────────────────── Maps ───────────────────────────────────
 
+# Maps axis → directions
 _FIRST_DIRECTION = { Axis.HORIZONTAL: Direction.LEFT, Axis.VERTICAL: Direction.TOP }
 _LAST_DIRECTION = { Axis.HORIZONTAL: Direction.RIGHT, Axis.VERTICAL: Direction.BOTTOM }
 
+# Maps border style → line symbols
 _HLINE = { NodeBorder.SINGLE: '─', NodeBorder.DOUBLE: '═' }
 _VLINE = { NodeBorder.SINGLE: '│', NodeBorder.DOUBLE: '║' }
 
+# Maps (h_side, v_side) → (h_style, v_style) → corner symbols
 _CORNERS = {
 	(Direction.TOP, Direction.LEFT): {
 		(NodeBorder.SINGLE, NodeBorder.SINGLE): '┌',
@@ -44,7 +47,7 @@ _CORNERS = {
 	}
 }
 
-# -----------------------------------> Utility
+# ─────────────────────────────────── Utility ───────────────────────────────────
 
 def _preOrderTraversal(node: Node) -> Generator[Node, None, None]:
 	if node.visibility.value == NodeVisibility.NONE:
@@ -64,7 +67,7 @@ def _postOrderTraversal(node: Node) -> Generator[Node, None, None]:
 			yield from _postOrderTraversal(child)
 	yield node
 
-# -----------------------------------> Node
+# ─────────────────────────────────── Node ───────────────────────────────────
 
 class Node:
 	__descriptors__: list[BaseDescriptor] = []
@@ -75,13 +78,33 @@ class Node:
 	_prev: Node | None = None
 	_next: Node | None = None
 
-	_inner_offset: dict[Axis, int]
-	_outer_offset: dict[Axis, int]
-	_rect: dict[Direction, int]
-	_clip: dict[Direction, int]
+	@property
+	def parent(self) -> Box | None:
+		return self._parent
+
+	@property
+	def index(self) -> int | None:
+		return self._index
+
+	@property
+	def prev(self) -> Node | None:
+		return self._prev
+
+	@property
+	def next(self) -> Node | None:
+		return self._next
+
+	# ──── Compute intermediates
+
+	_inner_offset: dict[Axis, int]		# padding + border cells consumed per axis
+	_outer_offset: dict[Axis, int]		# margin cells consumed per axis
+	_rect:  dict[Direction, int]		# bounding box
+	_clip:  dict[Direction, int]		# visible region
 
 	id: str | None
 	classlist: list[str]
+
+	# ──── Styles
 
 	visibility = PropertyDescriptor('show', literals=NodeVisibility)
 	positioning = PropertyDescriptor('auto', literals=NodePositioning)
@@ -134,22 +157,6 @@ class Node:
 	background = PropertyDescriptor('opaque', literals=NodeBackground)
 	mouse_events = PropertyDescriptor('capture', literals=NodeMouseEvents)
 
-	@property
-	def parent(self) -> Box | None:
-		return self._parent
-
-	@property
-	def index(self) -> int | None:
-		return self._index
-
-	@property
-	def prev(self) -> Node | None:
-		return self._prev
-
-	@property
-	def next(self) -> Node | None:
-		return self._next
-
 	def __init__(self, **kwargs: str) -> None:
 		for descriptor in self.__descriptors__:
 			descriptor.setup(self)
@@ -167,7 +174,13 @@ class Node:
 		return f'Node({self.origin_x.computed}, {self.origin_y.computed})' \
 			 + f' {self.width.computed}x{self.height.computed}'
 
-	def _computeAxialStatic(self, axis: Axis) -> None:
+	# ──── Compute pipeline
+
+	def _computeStaticProperties(self) -> None:
+		self._axialComputeStaticProperties(Axis.HORIZONTAL)
+		self._axialComputeStaticProperties(Axis.VERTICAL)
+
+	def _axialComputeStaticProperties(self, axis: Axis) -> None:
 		first_direction = _FIRST_DIRECTION[axis]
 		last_direction = _LAST_DIRECTION[axis]
 
@@ -189,11 +202,6 @@ class Node:
 		first_padding.computeStatic(axis)
 		last_padding.computeStatic(axis)
 
-		if self.parent is None:
-			self.z_index.computeStatic(axis)
-		else:
-			self.z_index.computeStatic(axis, self.parent.z_index.computed)
-
 		# Compute offset
 		self._inner_offset[axis] = first_padding.computed + last_padding.computed
 		self._outer_offset[axis] = first_margin.computed + last_margin.computed
@@ -202,10 +210,6 @@ class Node:
 			self._inner_offset[axis] += 1
 		if self.border[last_direction].value != NodeBorder.NONE:
 			self._inner_offset[axis] += 1
-
-	def _computeStaticProperties(self) -> None:
-		self._computeAxialStatic(Axis.HORIZONTAL)
-		self._computeAxialStatic(Axis.VERTICAL)
 
 	def _computePreferredSize(self, axis: Axis, root: Node) -> None:
 
@@ -231,18 +235,22 @@ class Node:
 			return
 		if self.parent is None:
 			return
-
 		parent_size = self.parent.size[axis]
 		if parent_size.value not in (NodeSize.GROW, NodeSize.FIT) and parent_size.unit != Unit.PERCENTAGE:
 			return
 
+		# NOTE this code is only valid for boxes. If grids eventually get implemented, this will not work
 		external_size = self_size.computed + self._outer_offset[axis]
+
+		# Along-axis: parent accomodates sum of child sizes
 		if self.parent.axis.value == axis:
 			parent_size.computed += external_size
+
+		# Across-axis: parent expands to accomodate widest child
 		elif parent_size.computed < external_size:
 			parent_size.computed = external_size
 
-	def _computeRelativeSize(self, axis: Axis, root: Node) -> None:
+	def _computeRelativeProperties(self, axis: Axis, root: Node) -> None:
 		if self.parent is None:
 			return
 
@@ -288,36 +296,45 @@ class Node:
 		if self.parent is None or self.positioning.value == NodePositioning.AUTO:
 			return
 
+		# Translate origin
 		self_origin = self.origin[axis]
 		self_origin.computed += self.translate[axis].computed
+
+		# Offset origin if relative
 		if self.positioning.value == NodePositioning.RELATIVE:
 			self_origin.computed += self.parent.origin[axis].computed
 
-	def _computeAutoPosition(self, axis: Axis):
+	def _computeAutoPosition(self, axis: Axis) -> None:
 		pass
 
-	def _computeRect(self, axis: Axis):
-		self_origin = self.origin[axis]
-		self._rect[_FIRST_DIRECTION[axis]] = self_origin.computed
-		self._rect[_LAST_DIRECTION[axis]] = self_origin.computed + self.size[axis].computed - 1
-
-	def _computeClip(self, axis: Axis):
+	def _computeBoundries(self, axis: Axis) -> None:
 		first_direction = _FIRST_DIRECTION[axis]
 		last_direction = _LAST_DIRECTION[axis]
-		self_first = self._rect[first_direction]
-		self_last = self._rect[last_direction]
+		self_origin = self.origin[axis]
 
+		# Compute rect
+		self_rect_first = self._rect[first_direction] = self_origin.computed
+		self_rect_last = self._rect[last_direction] = self_origin.computed + self.size[axis].computed - 1
+
+		# Compute clip
 		if self.parent is not None:
-			parent_first = self.parent._clip[first_direction]
-			if parent_first > self_first or self.overflow[first_direction].value == NodeOverflow.SHOW:
-				self_first = parent_first
+			parent_clip_first = self.parent._clip[first_direction]
+			parent_clip_last = self.parent._clip[last_direction]
+			
+			if parent_clip_first > self_rect_first or self.overflow[first_direction].value == NodeOverflow.SHOW:
+				self_rect_first = parent_clip_first
+			if parent_clip_last < self_rect_last or self.overflow[last_direction].value == NodeOverflow.SHOW:
+				self_rect_last = parent_clip_last
 
-			parent_last = self.parent._clip[last_direction]
-			if parent_last < self_last or self.overflow[last_direction].value == NodeOverflow.SHOW:
-				self_last = parent_last
+		self._clip[first_direction] = self_rect_first
+		self._clip[last_direction] = self_rect_last
 
-		self._clip[first_direction] = self_first
-		self._clip[last_direction] = self_last
+	def _computeZIndex(self, axis: Axis) -> None:
+		if self.parent is None:
+			self.z_index.computeStatic(axis)
+			return
+
+		self.z_index.computeStatic(axis, self.parent.z_index.computed)
 
 	def setParent(self, parent: Box | None) -> None:
 		if self._parent == parent:
@@ -347,34 +364,30 @@ class Node:
 			node._computePreferredSize(Axis.HORIZONTAL, self)
 
 		for node in preorder:
-			node._computeRelativeSize(Axis.HORIZONTAL, self)
+			node._computeRelativeProperties(Axis.HORIZONTAL, self)
 			node._computeDynamicChildren(Axis.HORIZONTAL)
 
 		# Compute position
 		for node in preorder:
 			node._computeManualPosition(Axis.HORIZONTAL)
 			node._computeAutoPosition(Axis.HORIZONTAL)
-
-			# Compute boundries
-			node._computeRect(Axis.HORIZONTAL)
-			node._computeClip(Axis.HORIZONTAL)
+			node._computeBoundries(Axis.HORIZONTAL)
+			node._computeZIndex(Axis.HORIZONTAL)
 
 		# Compute vertical axis
 		for node in postorder:
 			node._computePreferredSize(Axis.VERTICAL, self)
 
 		for node in preorder:
-			node._computeRelativeSize(Axis.VERTICAL, self)
+			node._computeRelativeProperties(Axis.VERTICAL, self)
 			node._computeDynamicChildren(Axis.VERTICAL)
 
 		# Compute position
 		for node in preorder:
 			node._computeManualPosition(Axis.VERTICAL)
 			node._computeAutoPosition(Axis.VERTICAL)
-
-			# Compute boundries
-			node._computeRect(Axis.VERTICAL)
-			node._computeClip(Axis.VERTICAL)
+			node._computeBoundries(Axis.VERTICAL)
+			node._computeZIndex(Axis.VERTICAL)
 
 	def paint(self, canvas: Canvas) -> bool:
 		if self.visibility.value != NodeVisibility.SHOW:
@@ -501,17 +514,12 @@ class Node:
 
 		return True
 
-# -----------------------------------> Box
+# ─────────────────────────────────── Box ───────────────────────────────────
 
 class Box(Node):
 	_children: list[Node]
 	_descendants: set[Node]
 	_automatic_children: list[Node]
-
-	axis = PropertyDescriptor('vertical', literals=Axis)
-	place_children_along = PropertyDescriptor('start', literals=BoxPlaceChildren)
-	place_children_across = PropertyDescriptor('start', literals=BoxPlaceChildren)
-	child_gap = PropertyDescriptor('0px', pixels=True, squares=True, literals=BoxChildGap)
 
 	@property
 	def children(self) -> list[Node]:
@@ -520,6 +528,13 @@ class Box(Node):
 	@property
 	def descendants(self) -> set[Node]:
 		return self._descendants.copy()
+
+	# ──── Styles ────
+
+	axis = PropertyDescriptor('vertical', literals=Axis)
+	place_children_along = PropertyDescriptor('start', literals=BoxPlaceChildren)
+	place_children_across = PropertyDescriptor('start', literals=BoxPlaceChildren)
+	child_gap = PropertyDescriptor('0px', pixels=True, squares=True, literals=BoxChildGap)
 
 	def __init__(self, **kwargs: str) -> None:
 		super().__init__(**kwargs)
@@ -532,6 +547,8 @@ class Box(Node):
 		for child in self.children:
 			result += '\n\t' + '\n\t'.join(child.__repr__().splitlines())
 		return result
+
+	# ──── Compute pipeline ────
 
 	def _computeStaticProperties(self) -> None:
 		super()._computeStaticProperties()
@@ -563,20 +580,21 @@ class Box(Node):
 			remaining = self._floodChildren(axis)
 
 			# Calculate autmatic child gap
-			if self.child_gap.value == BoxChildGap.AUTO \
-			and (gaps := len(self._automatic_children) - 1) > 0:
-				self.child_gap.computed = int(remaining / gaps)
+			if self.child_gap.value == BoxChildGap.AUTO:
+				if (gaps := len(self._automatic_children) - 1) > 0:
+					self.child_gap.computed = int(remaining / gaps)
+			
+			return
 
 		# Clamp children across axis
-		else:
-			self._clampChildren(axis)
+		self._clampChildren(axis)
 
 	def _floodChildren(self, axis: Axis) -> int:
 
 		# Compute delta
 		delta = self.size[axis].computed - self._inner_offset[axis]
 		if (gaps := len(self._automatic_children) - 1) > 0:
-			delta -= self.child_gap.computed * gaps # This works with auto gaps as they init as 0
+			delta -= self.child_gap.computed * gaps
 
 		for child in self._automatic_children:
 			delta -= child.size[axis].computed + child._outer_offset[axis]
@@ -607,11 +625,13 @@ class Box(Node):
 			for child in eligible:
 				child_size = child.size[axis]
 
+				# Skip children that would violate limits
 				if sign + child_size.computed > child.max_size[axis].computed:
 					continue
 				if sign + child_size.computed < child.min_size[axis].computed:
 					continue
 
+				# All children at the reference size increase
 				if reference is None:
 					reference = sign * child_size.computed
 				elif sign * child_size.computed > reference:
@@ -624,7 +644,7 @@ class Box(Node):
 					break
 
 			if reference is None:
-				break
+				break # All eligible children are clamped - nothing more can be done
 
 		return delta
 
@@ -635,8 +655,10 @@ class Box(Node):
 			child_outer_offset = child._outer_offset[axis]
 			child_size = child.size[axis]
 
-			if child_size.value == NodeSize.GROW \
-			or child_size.value == NodeSize.FIT and child_size.computed + child_outer_offset > self_inner_size:
+			if child_size.value == NodeSize.GROW or (
+				child_size.value == NodeSize.FIT and 
+				child_size.computed + child_outer_offset > self_inner_size
+			):
 				child_size.clamp(
 					child.min_size[axis].computed,
 					child.max_size[axis].computed,
@@ -648,15 +670,19 @@ class Box(Node):
 
 		if self.axis.value == axis:
 			self._computeAutoPositionAlong(axis)
-		else:
-			self._computeAutoPositionAcross(axis)
+			return
+
+		self._computeAutoPositionAcross(axis)
 
 	def _computeAutoPositionAlong(self, axis: Axis):
 		first_direction = _FIRST_DIRECTION[axis]
+		
+		# Compute internal origin
 		offset = self.origin[axis].computed + self.padding[first_direction].computed
 		if self.border[first_direction].value != NodeBorder.NONE:
 			offset += 1
 
+		# Resolve child alignment
 		if self.place_children_along.value != BoxPlaceChildren.START:
 			remaining = self.size[axis].computed - self._inner_offset[axis]
 			if (gaps := len(self._automatic_children) - 1) > 0:
@@ -669,6 +695,7 @@ class Box(Node):
 			else:
 				offset += remaining
 
+		# Compute child origin
 		for child in self._automatic_children:
 			child.origin[axis].computed = (
 				offset
@@ -680,6 +707,8 @@ class Box(Node):
 
 	def _computeAutoPositionAcross(self, axis: Axis):
 		first_direction = _FIRST_DIRECTION[axis]
+
+		# Compute internal origin
 		offset = self.origin[axis].computed + self.padding[first_direction].computed
 		if self.border[first_direction].value != NodeBorder.NONE:
 			offset += 1
@@ -687,12 +716,14 @@ class Box(Node):
 		for child in self._automatic_children:
 			child_origin = child.origin[axis]
 
+			# Compute child origin
 			child_origin.computed = (
 				offset
 				+ child.margin[first_direction].computed
 				+ child.translate[axis].computed
 			)
 
+			# Resolve child alignment
 			if self.place_children_across.value != BoxPlaceChildren.START:
 				remaining = self.size[axis].computed - self._inner_offset[axis] - child.size[axis].computed - child._outer_offset[axis]
 				if self.place_children_across.value == BoxPlaceChildren.CENTER:
