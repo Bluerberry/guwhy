@@ -77,8 +77,6 @@ class Node:
 
 	_inner_offset: dict[Axis, int]
 	_outer_offset: dict[Axis, int]
-	_inner_size: dict[Axis, int]
-	_outer_size: dict[Axis, int]
 	_rect: dict[Direction, int]
 	_clip: dict[Direction, int]
 
@@ -158,8 +156,6 @@ class Node:
 
 		self._inner_offset = { Axis.HORIZONTAL: 0, Axis.VERTICAL: 0 }
 		self._outer_offset = { Axis.HORIZONTAL: 0, Axis.VERTICAL: 0 }
-		self._inner_size = { Axis.HORIZONTAL: 0, Axis.VERTICAL: 0}
-		self._outer_size = { Axis.HORIZONTAL: 0, Axis.VERTICAL: 0}
 		self._rect = { Direction.TOP: 0, Direction.RIGHT: 0, Direction.BOTTOM: 0, Direction.LEFT: 0 }
 		self._clip = { Direction.TOP: 0, Direction.RIGHT: 0, Direction.BOTTOM: 0, Direction.LEFT: 0 }
 
@@ -285,11 +281,6 @@ class Node:
 		if self_translate.unit == Unit.PERCENTAGE:
 			self_translate.computed = int(self_size.computed * self_translate.value / 100)
 
-	def _computeInnerOuterSize(self, axis: Axis) -> None:
-		self_size = self.size[axis]
-		self._inner_size[axis] = self_size.computed - self._inner_offset[axis]
-		self._outer_size[axis] = self_size.computed + self._outer_offset[axis]
-
 	def _computeDynamicChildren(self, axis: Axis) -> None:
 		pass
 
@@ -357,7 +348,6 @@ class Node:
 
 		for node in preorder:
 			node._computeRelativeSize(Axis.HORIZONTAL, self)
-			node._computeInnerOuterSize(Axis.HORIZONTAL)
 			node._computeDynamicChildren(Axis.HORIZONTAL)
 
 		# Compute position
@@ -375,7 +365,6 @@ class Node:
 
 		for node in preorder:
 			node._computeRelativeSize(Axis.VERTICAL, self)
-			node._computeInnerOuterSize(Axis.VERTICAL)
 			node._computeDynamicChildren(Axis.VERTICAL)
 
 		# Compute position
@@ -585,7 +574,7 @@ class Box(Node):
 	def _floodChildren(self, axis: Axis) -> int:
 
 		# Compute delta
-		delta = self._inner_size[axis]
+		delta = self.size[axis].computed - self._inner_offset[axis]
 		if (gaps := len(self._automatic_children) - 1) > 0:
 			delta -= self.child_gap.computed * gaps # This works with auto gaps as they init as 0
 
@@ -640,7 +629,7 @@ class Box(Node):
 		return delta
 
 	def _clampChildren(self, axis: Axis) -> None:
-		self_inner_size = self._inner_size[axis]
+		self_inner_size = self.size[axis].computed - self._inner_offset[axis]
 
 		for child in self._automatic_children:
 			child_outer_offset = child._outer_offset[axis]
@@ -669,11 +658,11 @@ class Box(Node):
 			offset += 1
 
 		if self.place_children_along.value != BoxPlaceChildren.START:
-			remaining = self._inner_size[axis]
+			remaining = self.size[axis].computed - self._inner_offset[axis]
 			if (gaps := len(self._automatic_children) - 1) > 0:
 				remaining -= self.child_gap.computed * gaps
 			for child in self._automatic_children:
-				remaining -= child._outer_size[axis]
+				remaining -= child.size[axis].computed + child._outer_offset[axis]
 
 			if self.place_children_along.value == BoxPlaceChildren.CENTER:
 				offset += int(remaining / 2)
@@ -687,7 +676,7 @@ class Box(Node):
 				+ child.translate[axis].computed
 			)
 
-			offset += child._outer_size[axis] + self.child_gap.computed
+			offset += child.size[axis].computed + child._outer_offset[axis] + self.child_gap.computed
 
 	def _computeAutoPositionAcross(self, axis: Axis):
 		first_direction = _FIRST_DIRECTION[axis]
@@ -705,7 +694,7 @@ class Box(Node):
 			)
 
 			if self.place_children_across.value != BoxPlaceChildren.START:
-				remaining = self._inner_size[axis] - child._outer_size[axis]
+				remaining = self.size[axis].computed - self._inner_offset[axis] - child.size[axis].computed - child._outer_offset[axis]
 				if self.place_children_across.value == BoxPlaceChildren.CENTER:
 					child_origin.computed += int(remaining / 2)
 				elif  self.place_children_across.value == BoxPlaceChildren.END:
