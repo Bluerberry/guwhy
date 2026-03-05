@@ -58,7 +58,7 @@ def _preOrderTraversal(node: Node) -> Generator[Node, None, None]:
 def _postOrderTraversal(node: Node) -> Generator[Node, None, None]:
 	if node.visibility.value == NodeVisibility.NONE:
 		return
-	
+
 	if isinstance(node, Box):
 		for child in node.children:
 			yield from _postOrderTraversal(child)
@@ -172,30 +172,39 @@ class Node:
 			 + f' {self.width.computed}x{self.height.computed}'
 
 	def _computeAxialStatic(self, axis: Axis) -> None:
+		first_direction = _FIRST_DIRECTION[axis]
+		last_direction = _LAST_DIRECTION[axis]
+
+		first_margin = self.margin[first_direction]
+		last_margin = self.margin[last_direction]
+		first_padding = self.padding[first_direction]
+		last_padding = self.padding[last_direction]
 
 		# Compute static properties
 		self.origin[axis].computeStatic(axis)
 		self.translate[axis].computeStatic(axis)
+
 		self.size[axis].computeStatic(axis)
 		self.min_size[axis].computeStatic(axis)
 		self.max_size[axis].computeStatic(axis, float('inf'))
-		self.margin[_FIRST_DIRECTION[axis]].computeStatic(axis)
-		self.margin[_LAST_DIRECTION[axis]].computeStatic(axis)
-		self.padding[_FIRST_DIRECTION[axis]].computeStatic(axis)
-		self.padding[_LAST_DIRECTION[axis]].computeStatic(axis)
-		
+
+		first_margin.computeStatic(axis)
+		last_margin.computeStatic(axis)
+		first_padding.computeStatic(axis)
+		last_padding.computeStatic(axis)
+
 		if self.parent is None:
 			self.z_index.computeStatic(axis)
 		else:
 			self.z_index.computeStatic(axis, self.parent.z_index.computed)
 
 		# Compute offset
-		self._inner_offset[axis] = self.padding[_FIRST_DIRECTION[axis]].computed + self.padding[_LAST_DIRECTION[axis]].computed
-		self._outer_offset[axis] = self.margin[_FIRST_DIRECTION[axis]].computed + self.margin[_LAST_DIRECTION[axis]].computed
+		self._inner_offset[axis] = first_padding.computed + last_padding.computed
+		self._outer_offset[axis] = first_margin.computed + last_margin.computed
 
-		if self.border[_FIRST_DIRECTION[axis]].value != NodeBorder.NONE:
+		if self.border[first_direction].value != NodeBorder.NONE:
 			self._inner_offset[axis] += 1
-		if self.border[_LAST_DIRECTION[axis]].value != NodeBorder.NONE:
+		if self.border[last_direction].value != NodeBorder.NONE:
 			self._inner_offset[axis] += 1
 
 	def _computeStaticProperties(self) -> None:
@@ -205,11 +214,12 @@ class Node:
 	def _computePreferredSize(self, axis: Axis, root: Node) -> None:
 
 		# Compute preferred size
-		if self.size[axis].value in (NodeSize.GROW, NodeSize.FIT) or self.size[axis].unit == Unit.PERCENTAGE:
-			self.size[axis].computed += self._inner_offset[axis]
+		self_size = self.size[axis]
+		if self_size.value in (NodeSize.GROW, NodeSize.FIT) or self_size.unit == Unit.PERCENTAGE:
+			self_size.computed += self._inner_offset[axis]
 
 		# Clamp size
-		self.size[axis].clamp(
+		self_size.clamp(
 			self.min_size[axis].computed,
 			self.max_size[axis].computed
 		)
@@ -225,86 +235,98 @@ class Node:
 			return
 		if self.parent is None:
 			return
-		if self.parent.size[axis].value not in (NodeSize.GROW, NodeSize.FIT) and self.parent.size[axis].unit != Unit.PERCENTAGE:
+
+		parent_size = self.parent.size[axis]
+		if parent_size.value not in (NodeSize.GROW, NodeSize.FIT) and parent_size.unit != Unit.PERCENTAGE:
 			return
 
-		external_size = self.size[axis].computed + self._outer_offset[axis]
+		external_size = self_size.computed + self._outer_offset[axis]
 		if self.parent.axis.value == axis:
-			self.parent.size[axis].computed += external_size
-		elif self.parent.size[axis].computed < external_size:
-			self.parent.size[axis].computed = external_size
+			parent_size.computed += external_size
+		elif parent_size.computed < external_size:
+			parent_size.computed = external_size
 
 	def _computeRelativeSize(self, axis: Axis, root: Node) -> None:
 		if self.parent is None:
 			return
 
+		parent_size = self.parent.size[axis]
+		self_min_size = self.min_size[axis]
+		self_max_size = self.max_size[axis]
+
 		# Relative size
-		if self.size[axis].unit == Unit.PERCENTAGE:
-			self.size[axis].computed = int(self.parent.size[axis].computed * self.size[axis].value / 100)
+		self_size = self.size[axis]
+		if self_size.unit == Unit.PERCENTAGE:
+			self_size.computed = int(parent_size.computed * self_size.value / 100)
 
-			# Relative limits
-			if self.min_size[axis].unit == Unit.PERCENTAGE:
-				self.min_size[axis].computed = int(self.parent.size[axis].computed * self.min_size[axis].value / 100)
-			if self.max_size[axis].unit == Unit.PERCENTAGE:
-				self.max_size[axis].computed = int(self.parent.size[axis].computed * self.max_size[axis].value / 100)
+		# Relative limits
+		if self_min_size.unit == Unit.PERCENTAGE:
+			self_min_size.computed = int(parent_size.computed * self_min_size.value / 100)
+		if self_max_size.unit == Unit.PERCENTAGE:
+			self_max_size.computed = int(parent_size.computed * self_max_size.value / 100)
 
-			# Final clamp
-			self.size[axis].clamp(
-				self.min_size[axis].computed,
-				self.max_size[axis].computed
-			)
+		# Final clamp
+		self_size.clamp(
+			self_min_size.computed,
+			self_max_size.computed
+		)
 
 		# Relative position
-		reference = self.parent.size[axis].computed
+		reference = parent_size.computed
 		if self.positioning.value == NodePositioning.ABSOLUTE:
 			reference = root.size[axis].computed
 
-		if self.origin[axis].unit == Unit.PERCENTAGE:
-			self.origin[axis].computed = int(reference * self.origin[axis].value / 100)
-		if self.origin[axis].unit == Unit.PERCENTAGE:
-			self.origin[axis].computed = int(reference * self.origin[axis].value / 100)
+		self_origin = self.origin[axis]
+		if self_origin.unit == Unit.PERCENTAGE:
+			self_origin.computed = int(reference * self_origin.value / 100)
 
 		# Relative translation
-		if self.translate[axis].unit == Unit.PERCENTAGE:
-			self.translate[axis].computed = int(self.size[axis].computed * self.translate[axis].value / 100)
+		self_translate = self.translate[axis]
+		if self_translate.unit == Unit.PERCENTAGE:
+			self_translate.computed = int(self_size.computed * self_translate.value / 100)
 
 	def _computeInnerOuterSize(self, axis: Axis) -> None:
-		self._inner_size[axis] = self.size[axis].computed - self._inner_offset[axis]
-		self._outer_size[axis] = self.size[axis].computed + self._outer_offset[axis]
+		self_size = self.size[axis]
+		self._inner_size[axis] = self_size.computed - self._inner_offset[axis]
+		self._outer_size[axis] = self_size.computed + self._outer_offset[axis]
 
 	def _computeDynamicChildren(self, axis: Axis) -> None:
-		pass	
+		pass
 
 	def _computeManualPosition(self, axis: Axis) -> None:
 		if self.parent is None or self.positioning.value == NodePositioning.AUTO:
 			return
 
-		self.origin[axis].computed += self.translate[axis].computed
+		self_origin = self.origin[axis]
+		self_origin.computed += self.translate[axis].computed
 		if self.positioning.value == NodePositioning.RELATIVE:
-			self.origin[axis].computed += self.parent.origin[axis].computed
+			self_origin.computed += self.parent.origin[axis].computed
 
 	def _computeAutoPosition(self, axis: Axis):
 		pass
 
 	def _computeRect(self, axis: Axis):
-		self._rect[_FIRST_DIRECTION[axis]] = self.origin[axis].computed
-		self._rect[_LAST_DIRECTION[axis]] = self.origin[axis].computed + self.size[axis].computed - 1
+		self_origin = self.origin[axis]
+		self._rect[_FIRST_DIRECTION[axis]] = self_origin.computed
+		self._rect[_LAST_DIRECTION[axis]] = self_origin.computed + self.size[axis].computed - 1
 
 	def _computeClip(self, axis: Axis):
-		self_first = self._rect[_FIRST_DIRECTION[axis]]
-		self_last = self._rect[_LAST_DIRECTION[axis]]
+		first_direction = _FIRST_DIRECTION[axis]
+		last_direction = _LAST_DIRECTION[axis]
+		self_first = self._rect[first_direction]
+		self_last = self._rect[last_direction]
 
 		if self.parent is not None:
-			parent_first = self.parent._clip[_FIRST_DIRECTION[axis]]
-			if parent_first > self_first or self.overflow[_FIRST_DIRECTION[axis]].value == NodeOverflow.SHOW:
+			parent_first = self.parent._clip[first_direction]
+			if parent_first > self_first or self.overflow[first_direction].value == NodeOverflow.SHOW:
 				self_first = parent_first
 
-			parent_last = self.parent._clip[_LAST_DIRECTION[axis]]
-			if parent_last < self_last or self.overflow[_LAST_DIRECTION[axis]].value == NodeOverflow.SHOW:
+			parent_last = self.parent._clip[last_direction]
+			if parent_last < self_last or self.overflow[last_direction].value == NodeOverflow.SHOW:
 				self_last = parent_last
 
-		self._clip[_FIRST_DIRECTION[axis]] = self_first
-		self._clip[_LAST_DIRECTION[axis]] = self_last
+		self._clip[first_direction] = self_first
+		self._clip[last_direction] = self_last
 
 	def setParent(self, parent: Box | None) -> None:
 		if self._parent == parent:
@@ -368,33 +390,33 @@ class Node:
 	def paint(self, canvas: Canvas) -> bool:
 		if self.visibility.value != NodeVisibility.SHOW:
 			return False
-	
+
 		rect_top = self._rect[Direction.TOP]
 		rect_right = self._rect[Direction.RIGHT]
 		rect_bottom = self._rect[Direction.BOTTOM]
 		rect_left = self._rect[Direction.LEFT]
-	
+
 		clip_top = self._clip[Direction.TOP]
 		clip_right = self._clip[Direction.RIGHT]
 		clip_bottom = self._clip[Direction.BOTTOM]
 		clip_left = self._clip[Direction.LEFT]
-	
+
 		# Skip if zero-size or entirely outside clip
 		if rect_right < rect_left or rect_bottom < rect_top:
 			return True
 		if rect_right < clip_left or rect_left > clip_right or rect_bottom < clip_top or rect_top > clip_bottom:
 			return True
-		
+
 		drawn_top = max(rect_top, clip_top)
 		drawn_right = min(rect_right, clip_right)
 		drawn_bottom = min(rect_bottom, clip_bottom)
 		drawn_left = max(rect_left, clip_left)
-	
+
 		top_border = self.border[Direction.TOP].value
 		right_border = self.border[Direction.RIGHT].value
 		bottom_border = self.border[Direction.BOTTOM].value
 		left_border = self.border[Direction.LEFT].value
-	
+
 		has_top = top_border != NodeBorder.NONE
 		has_right = right_border != NodeBorder.NONE
 		has_bottom = bottom_border != NodeBorder.NONE
@@ -410,14 +432,14 @@ class Node:
 				drawn_top, drawn_bottom,
 				z
 			)
-	
+
 		# Check for degenerate rect shapes
 		if rect_left == rect_right:
 
 			# Single cell — collapse to a dot
 			if rect_top == rect_bottom:
 				if has_left or has_right or has_bottom or has_top:
-					canvas.drawChar('·', drawn_left, drawn_top, z)					
+					canvas.drawChar('·', drawn_left, drawn_top, z)
 
 				return True
 
@@ -427,15 +449,15 @@ class Node:
 				canvas.drawVLine(_VLINE[style], drawn_left, drawn_top, drawn_bottom, z)
 
 			return True
-	
+
 		# Single row — collapse to a horizontal line
 		if rect_top == rect_bottom:
 			style = top_border if has_top else bottom_border if has_bottom else NodeBorder.NONE
 			if style != NodeBorder.NONE and clip_top <= rect_top <= clip_bottom:
 				canvas.drawHLine(_HLINE[style], drawn_left, drawn_right, drawn_top, z)
-				
+
 			return True
-	
+
 		top_visible = has_top and clip_top <= rect_top <= clip_bottom
 		right_visible = has_right and clip_left <= rect_right <= clip_right
 		bottom_visible = has_bottom and clip_top <= rect_bottom <= clip_bottom
@@ -477,7 +499,7 @@ class Node:
 					_CORNERS[(Direction.BOTTOM, Direction.RIGHT)][(bottom_border, right_border)],
 					drawn_right, drawn_bottom, z
 				)
-		
+
 		# Draw background
 		if self.background.value == NodeBackground.OPAQUE:
 			bg_left = max(rect_left + (1 if left_visible else 0), clip_left)
@@ -538,9 +560,10 @@ class Box(Node):
 
 		# Compute preferred size
 		if self.axis.value == axis:
-			if self.size[axis].value in (NodeSize.GROW, NodeSize.FIT) or self.size[axis].unit == Unit.PERCENTAGE:
+			self_size = self.size[axis]
+			if self_size.value in (NodeSize.GROW, NodeSize.FIT) or self_size.unit == Unit.PERCENTAGE:
 				if (gaps := len(self._automatic_children) - 1) > 0:
-					self.size[axis].computed += self.child_gap.computed * gaps
+					self_size.computed += self.child_gap.computed * gaps
 
 		super()._computePreferredSize(axis, root)
 
@@ -551,9 +574,9 @@ class Box(Node):
 			remaining = self._floodChildren(axis)
 
 			# Calculate autmatic child gap
-			if self.child_gap.value == BoxChildGap.AUTO:
-				if (gaps := len(self._automatic_children) - 1) > 0:
-					self.child_gap.computed = int(remaining / gaps)
+			if self.child_gap.value == BoxChildGap.AUTO \
+			and (gaps := len(self._automatic_children) - 1) > 0:
+				self.child_gap.computed = int(remaining / gaps)
 
 		# Clamp children across axis
 		else:
@@ -593,19 +616,20 @@ class Box(Node):
 		while delta != 0:
 			reference = None
 			for child in eligible:
-				if sign + child.size[axis].computed > child.max_size[axis].computed:
-					continue
+				child_size = child.size[axis]
 
-				if sign + child.size[axis].computed < child.min_size[axis].computed:
+				if sign + child_size.computed > child.max_size[axis].computed:
+					continue
+				if sign + child_size.computed < child.min_size[axis].computed:
 					continue
 
 				if reference is None:
-					reference = sign * child.size[axis].computed
-				elif sign * child.size[axis].computed > reference:
+					reference = sign * child_size.computed
+				elif sign * child_size.computed > reference:
 					break
 
 				delta -= sign
-				child.size[axis].computed += sign
+				child_size.computed += sign
 
 				if delta == 0:
 					break
@@ -616,14 +640,18 @@ class Box(Node):
 		return delta
 
 	def _clampChildren(self, axis: Axis) -> None:
+		self_inner_size = self._inner_size[axis]
+
 		for child in self._automatic_children:
-			if child.size[axis].value == NodeSize.GROW \
-			or child.size[axis].value == NodeSize.FIT \
-			and child.size[axis].computed + child._outer_offset[axis] > self._inner_size[axis]:
-				child.size[axis].computed = self._inner_size[axis] - child._outer_offset[axis]
-				child.size[axis].clamp(
+			child_outer_offset = child._outer_offset[axis]
+			child_size = child.size[axis]
+
+			if child_size.value == NodeSize.GROW \
+			or child_size.value == NodeSize.FIT and child_size.computed + child_outer_offset > self_inner_size:
+				child_size.clamp(
 					child.min_size[axis].computed,
-					child.max_size[axis].computed
+					child.max_size[axis].computed,
+					self_inner_size - child_outer_offset
 				)
 
 	def _computeAutoPosition(self, axis: Axis):
@@ -635,8 +663,9 @@ class Box(Node):
 			self._computeAutoPositionAcross(axis)
 
 	def _computeAutoPositionAlong(self, axis: Axis):
-		offset = self.origin[axis].computed + self.padding[_FIRST_DIRECTION[axis]].computed
-		if self.border[_FIRST_DIRECTION[axis]].value != NodeBorder.NONE:
+		first_direction = _FIRST_DIRECTION[axis]
+		offset = self.origin[axis].computed + self.padding[first_direction].computed
+		if self.border[first_direction].value != NodeBorder.NONE:
 			offset += 1
 
 		if self.place_children_along.value != BoxPlaceChildren.START:
@@ -654,30 +683,33 @@ class Box(Node):
 		for child in self._automatic_children:
 			child.origin[axis].computed = (
 				offset
-				+ child.margin[_FIRST_DIRECTION[axis]].computed
+				+ child.margin[first_direction].computed
 				+ child.translate[axis].computed
 			)
 
 			offset += child._outer_size[axis] + self.child_gap.computed
 
 	def _computeAutoPositionAcross(self, axis: Axis):
-		offset = self.origin[axis].computed + self.padding[_FIRST_DIRECTION[axis]].computed
-		if self.border[_FIRST_DIRECTION[axis]].value != NodeBorder.NONE:
+		first_direction = _FIRST_DIRECTION[axis]
+		offset = self.origin[axis].computed + self.padding[first_direction].computed
+		if self.border[first_direction].value != NodeBorder.NONE:
 			offset += 1
 
 		for child in self._automatic_children:
-			child.origin[axis].computed = (
+			child_origin = child.origin[axis]
+
+			child_origin.computed = (
 				offset
-				+ child.margin[_FIRST_DIRECTION[axis]].computed
+				+ child.margin[first_direction].computed
 				+ child.translate[axis].computed
 			)
 
 			if self.place_children_across.value != BoxPlaceChildren.START:
 				remaining = self._inner_size[axis] - child._outer_size[axis]
 				if self.place_children_across.value == BoxPlaceChildren.CENTER:
-					child.origin[axis].computed += int(remaining / 2)
+					child_origin.computed += int(remaining / 2)
 				elif  self.place_children_across.value == BoxPlaceChildren.END:
-					child.origin[axis].computed += remaining
+					child_origin.computed += remaining
 
 	def addChild(self, child: Node) -> None:
 		if child in self._children:
@@ -741,7 +773,7 @@ class Box(Node):
 	def paint(self, canvas: Canvas) -> bool:
 		if not super().paint(canvas):
 			return False
-		
+
 		for child in self.children:
 			child.paint(canvas)
 		return True

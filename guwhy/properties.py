@@ -25,7 +25,9 @@ class Property:
 	value: Any
 	computed: Any
 
-	def clamp(self, min: int, max: int) -> None:
+	def clamp(self, min: int, max: int, new: int | None = None) -> None:
+		if new is not None:
+			self.computed = new
 		if self.computed < min:
 			self.computed = min
 		elif self.computed > max:
