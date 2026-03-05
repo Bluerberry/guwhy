@@ -465,6 +465,15 @@ class Node:
 		bottom_visible = has_bottom and clip_top <= rect_bottom <= clip_bottom
 		left_visible = has_left and clip_left <= rect_left <= clip_right
 
+		# Draw background if necissary
+		if self.background.value == NodeBackground.OPAQUE:
+			canvas.drawRect(
+				' ',
+				drawn_left, drawn_right,
+				drawn_top, drawn_bottom,
+				z
+			)
+
 		# Draw sides
 		if top_visible:
 			canvas.drawHLine(_HLINE[top_border], drawn_left,  drawn_right,  drawn_top, z)
@@ -501,16 +510,6 @@ class Node:
 					_CORNERS[(Direction.BOTTOM, Direction.RIGHT)][(bottom_border, right_border)],
 					drawn_right, drawn_bottom, z
 				)
-
-		# Draw background
-		if self.background.value == NodeBackground.OPAQUE:
-			bg_left = max(rect_left + (1 if left_visible else 0), clip_left)
-			bg_right = min(rect_right - (1 if right_visible else 0), clip_right)
-			bg_top = max(rect_top + (1 if top_visible else 0), clip_top)
-			bg_bottom = min(rect_bottom - (1 if bottom_visible else 0), clip_bottom)
-
-			if bg_right >= bg_left and bg_bottom >= bg_top:
-				canvas.drawRect(' ', bg_left, bg_right, bg_top, bg_bottom, z)
 
 		return True
 
