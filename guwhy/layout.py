@@ -94,7 +94,7 @@ class Node:
 	def next(self) -> Node | None:
 		return self._next
 
-	# ──── Compute intermediates
+	# ──── Compute intermediaries
 
 	_inner_offset: dict[Axis, int]		# padding + border cells consumed per axis
 	_outer_offset: dict[Axis, int]		# margin cells consumed per axis
@@ -157,17 +157,27 @@ class Node:
 	background = PropertyDescriptor('opaque', literals=NodeBackground)
 	mouse_events = PropertyDescriptor('capture', literals=NodeMouseEvents)
 
-	def __init__(self, **kwargs: str) -> None:
+	def __init__(self, *,
+		id: str | None = None,
+		classlist: list[str] = [],
+		parent: Box | None = None, 
+		**kwargs: str
+	) -> None:
+		
+		# Setup descriptors
 		for descriptor in self.__descriptors__:
 			descriptor.setup(self)
 
+		# Setup compute intermediaries
 		self._inner_offset = { Axis.HORIZONTAL: 0, Axis.VERTICAL: 0 }
 		self._outer_offset = { Axis.HORIZONTAL: 0, Axis.VERTICAL: 0 }
 		self._rect = { Direction.TOP: 0, Direction.RIGHT: 0, Direction.BOTTOM: 0, Direction.LEFT: 0 }
 		self._clip = { Direction.TOP: 0, Direction.RIGHT: 0, Direction.BOTTOM: 0, Direction.LEFT: 0 }
 
-		self.id = None
-		self.classlist = []
+		# Apply kwargs
+		self.id = id
+		self.classlist = classlist.copy()
+		self.setParent(parent)
 		self.applyStyles(**kwargs)
 
 	def __repr__(self) -> str:
@@ -528,18 +538,33 @@ class Box(Node):
 	def descendants(self) -> set[Node]:
 		return self._descendants.copy()
 
-	# ──── Styles ────
+	# ──── Styles
 
 	axis = PropertyDescriptor('vertical', literals=Axis)
 	place_children_along = PropertyDescriptor('start', literals=BoxPlaceChildren)
 	place_children_across = PropertyDescriptor('start', literals=BoxPlaceChildren)
 	child_gap = PropertyDescriptor('0px', pixels=True, squares=True, literals=BoxChildGap)
 
-	def __init__(self, **kwargs: str) -> None:
-		super().__init__(**kwargs)
+	def __init__(self, *,
+		id: str | None = None,
+		classlist: list[str] = [],
+		parent: Box | None = None, 
+		children: list[Node] = [], 
+		**kwargs: str
+	) -> None:
+		
+		super().__init__(
+			id=id, 
+			classlist=classlist, 
+			parent=parent, 
+			**kwargs
+		)
 
+		# Setup children
 		self._children = list()
 		self._descendants = set()
+		for child in children:
+			child.setParent(self)
 
 	def __repr__(self) -> str:
 		result = super().__repr__()
@@ -547,7 +572,7 @@ class Box(Node):
 			result += '\n\t' + '\n\t'.join(child.__repr__().splitlines())
 		return result
 
-	# ──── Compute pipeline ────
+	# ──── Compute pipeline
 
 	def _computeStaticProperties(self) -> None:
 		super()._computeStaticProperties()
