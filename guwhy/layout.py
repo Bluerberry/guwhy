@@ -77,6 +77,8 @@ class Node:
 
 	_inner_offset: dict[Axis, int]
 	_outer_offset: dict[Axis, int]
+	_inner_size: dict[Axis, int]
+	_outer_size: dict[Axis, int]
 	_rect: dict[Direction, int]
 	_clip: dict[Direction, int]
 
@@ -154,8 +156,10 @@ class Node:
 		for descriptor in self.__descriptors__:
 			descriptor.setup(self)
 
-		self._inner_offset = { Axis.HORIZONTAL: 0, Axis.VERTICAL: 0}
-		self._outer_offset = { Axis.HORIZONTAL: 0, Axis.VERTICAL: 0}
+		self._inner_offset = { Axis.HORIZONTAL: 0, Axis.VERTICAL: 0 }
+		self._outer_offset = { Axis.HORIZONTAL: 0, Axis.VERTICAL: 0 }
+		self._inner_size = { Axis.HORIZONTAL: 0, Axis.VERTICAL: 0}
+		self._outer_size = { Axis.HORIZONTAL: 0, Axis.VERTICAL: 0}
 		self._rect = { Direction.TOP: 0, Direction.RIGHT: 0, Direction.BOTTOM: 0, Direction.LEFT: 0 }
 		self._clip = { Direction.TOP: 0, Direction.RIGHT: 0, Direction.BOTTOM: 0, Direction.LEFT: 0 }
 
@@ -167,7 +171,7 @@ class Node:
 		return f'Node({self.origin_x.computed}, {self.origin_y.computed})' \
 			 + f' {self.width.computed}x{self.height.computed}'
 
-	def _computeStatic(self, axis: Axis) -> None:
+	def _computeAxialStatic(self, axis: Axis) -> None:
 
 		# Compute static properties
 		self.origin[axis].computeStatic(axis)
@@ -194,7 +198,11 @@ class Node:
 		if self.border[_LAST_DIRECTION[axis]].value != NodeBorder.NONE:
 			self._inner_offset[axis] += 1
 
-	def _computePreferred(self, axis: Axis, root: Node) -> None:
+	def _computeStaticProperties(self) -> None:
+		self._computeAxialStatic(Axis.HORIZONTAL)
+		self._computeAxialStatic(Axis.VERTICAL)
+
+	def _computePreferredSize(self, axis: Axis, root: Node) -> None:
 
 		# Compute preferred size
 		if self.size[axis].value in (NodeSize.GROW, NodeSize.FIT) or self.size[axis].unit == Unit.PERCENTAGE:
@@ -226,7 +234,7 @@ class Node:
 		elif self.parent.size[axis].computed < external_size:
 			self.parent.size[axis].computed = external_size
 
-	def _computeRelative(self, axis: Axis, root: Node) -> None:
+	def _computeRelativeSize(self, axis: Axis, root: Node) -> None:
 		if self.parent is None:
 			return
 
@@ -260,14 +268,20 @@ class Node:
 		if self.translate[axis].unit == Unit.PERCENTAGE:
 			self.translate[axis].computed = int(self.size[axis].computed * self.translate[axis].value / 100)
 
-	def _computeDynamic(self, axis: Axis) -> None:
-		pass
+	def _computeInnerOuterSize(self, axis: Axis) -> None:
+		self._inner_size[axis] = self.size[axis].computed - self._inner_offset[axis]
+		self._outer_size[axis] = self.size[axis].computed + self._outer_offset[axis]
 
-	def _computeInnerOrigin(self, axis: Axis) -> None:
-		pass
+	def _computeDynamicChildren(self, axis: Axis) -> None:
+		pass	
 
 	def _computeManualPosition(self, axis: Axis) -> None:
-		pass
+		if self.parent is None or self.positioning.value == NodePositioning.AUTO:
+			return
+
+		self.origin[axis].computed += self.translate[axis].computed
+		if self.positioning.value == NodePositioning.RELATIVE:
+			self.origin[axis].computed += self.parent.origin[axis].computed
 
 	def _computeAutoPosition(self, axis: Axis):
 		pass
@@ -313,20 +327,19 @@ class Node:
 
 		# Compute static
 		for node in preorder:
-			node._computeStatic(Axis.HORIZONTAL)
-			node._computeStatic(Axis.VERTICAL)
+			node._computeStaticProperties()
 
 		# Compute horizontal axis
 		for node in postorder:
-			node._computePreferred(Axis.HORIZONTAL, self)
+			node._computePreferredSize(Axis.HORIZONTAL, self)
 
 		for node in preorder:
-			node._computeRelative(Axis.HORIZONTAL, self)
-			node._computeDynamic(Axis.HORIZONTAL)
+			node._computeRelativeSize(Axis.HORIZONTAL, self)
+			node._computeInnerOuterSize(Axis.HORIZONTAL)
+			node._computeDynamicChildren(Axis.HORIZONTAL)
 
 		# Compute position
 		for node in preorder:
-			node._computeInnerOrigin(Axis.HORIZONTAL)
 			node._computeManualPosition(Axis.HORIZONTAL)
 			node._computeAutoPosition(Axis.HORIZONTAL)
 
@@ -336,15 +349,15 @@ class Node:
 
 		# Compute vertical axis
 		for node in postorder:
-			node._computePreferred(Axis.VERTICAL, self)
+			node._computePreferredSize(Axis.VERTICAL, self)
 
 		for node in preorder:
-			node._computeRelative(Axis.VERTICAL, self)
-			node._computeDynamic(Axis.VERTICAL)
+			node._computeRelativeSize(Axis.VERTICAL, self)
+			node._computeInnerOuterSize(Axis.VERTICAL)
+			node._computeDynamicChildren(Axis.VERTICAL)
 
 		# Compute position
 		for node in preorder:
-			node._computeInnerOrigin(Axis.VERTICAL)
 			node._computeManualPosition(Axis.VERTICAL)
 			node._computeAutoPosition(Axis.VERTICAL)
 
@@ -483,7 +496,6 @@ class Box(Node):
 	_children: list[Node]
 	_descendants: set[Node]
 	_automatic_children: list[Node]
-	_inner_origin: dict[Axis, int]
 
 	axis = PropertyDescriptor('vertical', literals=Axis)
 	place_children_along = PropertyDescriptor('start', literals=BoxPlaceChildren)
@@ -503,7 +515,6 @@ class Box(Node):
 
 		self._children = list()
 		self._descendants = set()
-		self._inner_origin = { Axis.HORIZONTAL: 0, Axis.VERTICAL: 0}
 
 	def __repr__(self) -> str:
 		result = super().__repr__()
@@ -511,8 +522,8 @@ class Box(Node):
 			result += '\n\t' + '\n\t'.join(child.__repr__().splitlines())
 		return result
 
-	def _computeStatic(self, axis: Axis) -> None:
-		super()._computeStatic(axis)
+	def _computeStaticProperties(self) -> None:
+		super()._computeStaticProperties()
 
 		# Compute static properties
 		self.child_gap.computeStatic(self.axis.value)
@@ -523,7 +534,7 @@ class Box(Node):
 			if child.positioning.value == NodePositioning.AUTO:
 				self._automatic_children.append(child)
 
-	def _computePreferred(self, axis: Axis, root: Node) -> None:
+	def _computePreferredSize(self, axis: Axis, root: Node) -> None:
 
 		# Compute preferred size
 		if self.axis.value == axis:
@@ -531,9 +542,9 @@ class Box(Node):
 				if (gaps := len(self._automatic_children) - 1) > 0:
 					self.size[axis].computed += self.child_gap.computed * gaps
 
-		super()._computePreferred(axis, root)
+		super()._computePreferredSize(axis, root)
 
-	def _computeDynamic(self, axis: Axis) -> None:
+	def _computeDynamicChildren(self, axis: Axis) -> None:
 
 		# Flood children along axis
 		if self.axis.value == axis:
@@ -544,15 +555,14 @@ class Box(Node):
 				if (gaps := len(self._automatic_children) - 1) > 0:
 					self.child_gap.computed = int(remaining / gaps)
 
-			return
-
 		# Clamp children across axis
-		self._clampChildren(axis)
+		else:
+			self._clampChildren(axis)
 
 	def _floodChildren(self, axis: Axis) -> int:
 
 		# Compute delta
-		delta = self.size[axis].computed - self._inner_offset[axis]
+		delta = self._inner_size[axis]
 		if (gaps := len(self._automatic_children) - 1) > 0:
 			delta -= self.child_gap.computed * gaps # This works with auto gaps as they init as 0
 
@@ -606,44 +616,35 @@ class Box(Node):
 		return delta
 
 	def _clampChildren(self, axis: Axis) -> None:
-		parent_internal = self.size[axis].computed - self._inner_offset[axis]
 		for child in self._automatic_children:
-			child_external = child.size[axis].computed + child._outer_offset[axis]
-
 			if child.size[axis].value == NodeSize.GROW \
 			or child.size[axis].value == NodeSize.FIT \
-			and child_external > parent_internal:
-				child.size[axis].computed = parent_internal - child._outer_offset[axis]
+			and child.size[axis].computed + child._outer_offset[axis] > self._inner_size[axis]:
+				child.size[axis].computed = self._inner_size[axis] - child._outer_offset[axis]
 				child.size[axis].clamp(
 					child.min_size[axis].computed,
 					child.max_size[axis].computed
 				)
 
-	def _computeInnerOrigin(self, axis: Axis):
-		self._inner_origin[axis] = self.origin[axis].computed + self.padding[_FIRST_DIRECTION[axis]].computed
-		if self.border[_FIRST_DIRECTION[axis]].value != NodeBorder.NONE:
-			self._inner_origin[axis] += 1
-
-	def _computeManualPosition(self, axis: Axis) -> None:
-		for child in self.children:
-			child.origin[axis].computed += child.translate[axis].computed
-			if child.positioning.value == NodePositioning.RELATIVE:
-				child.origin[axis].computed += self.origin[axis].computed
-
 	def _computeAutoPosition(self, axis: Axis):
+		super()._computeAutoPosition(axis)
+
 		if self.axis.value == axis:
 			self._computeAutoPositionAlong(axis)
 		else:
 			self._computeAutoPositionAcross(axis)
 
 	def _computeAutoPositionAlong(self, axis: Axis):
-		offset = self._inner_origin[axis]
+		offset = self.origin[axis].computed + self.padding[_FIRST_DIRECTION[axis]].computed
+		if self.border[_FIRST_DIRECTION[axis]].value != NodeBorder.NONE:
+			offset += 1
+
 		if self.place_children_along.value != BoxPlaceChildren.START:
-			remaining = self.size[axis].computed - self._inner_offset[axis]
+			remaining = self._inner_size[axis]
 			if (gaps := len(self._automatic_children) - 1) > 0:
 				remaining -= self.child_gap.computed * gaps
 			for child in self._automatic_children:
-				remaining -= child.size[axis].computed + child._outer_offset[axis]
+				remaining -= child._outer_size[axis]
 
 			if self.place_children_along.value == BoxPlaceChildren.CENTER:
 				offset += int(remaining / 2)
@@ -657,18 +658,22 @@ class Box(Node):
 				+ child.translate[axis].computed
 			)
 
-			offset += child.size[axis].computed + child._outer_offset[axis] + self.child_gap.computed
+			offset += child._outer_size[axis] + self.child_gap.computed
 
 	def _computeAutoPositionAcross(self, axis: Axis):
+		offset = self.origin[axis].computed + self.padding[_FIRST_DIRECTION[axis]].computed
+		if self.border[_FIRST_DIRECTION[axis]].value != NodeBorder.NONE:
+			offset += 1
+
 		for child in self._automatic_children:
 			child.origin[axis].computed = (
-				self._inner_origin[axis]
+				offset
 				+ child.margin[_FIRST_DIRECTION[axis]].computed
 				+ child.translate[axis].computed
 			)
 
 			if self.place_children_across.value != BoxPlaceChildren.START:
-				remaining = self.size[axis].computed - self._inner_offset[axis] - child.size[axis].computed - child._outer_offset[axis]
+				remaining = self._inner_size[axis] - child._outer_size[axis]
 				if self.place_children_across.value == BoxPlaceChildren.CENTER:
 					child.origin[axis].computed += int(remaining / 2)
 				elif  self.place_children_across.value == BoxPlaceChildren.END:

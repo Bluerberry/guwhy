@@ -16,27 +16,18 @@ root = Box(
 
 a = Box(
     size = '50%',
-    border = 'single'
-)
-
-b = Box(
-    size = '4sq',
-    positioning = 'relative',
-    origin = '100% 0px',
+    border = 'single',
     overflow = 'show'
 )
 
-c = Box(
-    size = '2sq',
-    positioning = 'relative',
-    origin_y = '50%',
-    translate = '-50%',
+b = Box(
+    size = 'grow',
     border = 'single'
 )
 
+
 a.setParent(root)
 b.setParent(a)
-c.setParent(b)
 
 # -----------------------------------> Run
 
@@ -52,7 +43,6 @@ for y in range(H):
 check intermediate values
     - whether they are necissary (rect, inner_origin)
     - whether there are opportunities for other intermediates
-check if manualPosition can move to Node
 box should accept child kwarg
 node should accept parent kwarg
 place_children_along/across should have an axial property place_children
