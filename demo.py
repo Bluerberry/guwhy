@@ -1,0 +1,70 @@
+
+from guwhy.layout import Box
+from guwhy.canvas import Canvas
+
+# -----------------------------------> Layout
+
+W, H = 40, 20
+canvas = Canvas(W, H)
+
+root = Box(
+    size = f'{W}px {H}px',
+    border = 'double',
+    place_children_along = 'center',
+    place_children_across = 'center'
+)
+
+a = Box(
+    size = '50%',
+    border = 'single'
+)
+
+b = Box(
+    size = '4sq',
+    positioning = 'relative',
+    origin = '100% 0px',
+    overflow = 'show'
+)
+
+c = Box(
+    size = '2sq',
+    positioning = 'relative',
+    origin_y = '50%',
+    translate = '-50%',
+    border = 'single'
+)
+
+a.setParent(root)
+b.setParent(a)
+c.setParent(b)
+
+# -----------------------------------> Run
+
+root.compute()
+print(root)
+
+root.paint(canvas)
+pixels, nodes = canvas.compress()
+for y in range(H):
+    print(''.join(pixels[y*W:(y+1)*W]))
+
+""" TODO
+check relative inside dynamic
+check dynamic inside relative
+check relative translations for dynamic nodes
+check manually positioned dynamic nodes
+check intermediate values
+    - whether they are necissary (rect, inner_origin)
+    - whether there are opportunities for other intermediates
+check if manualPosition can move to Node
+box should accept child kwarg
+node should accept parent kwarg
+improve canvas layers
+    - support negative layers
+    - prevent z=999 from creating 998 new layers
+factor out repeating dict accesses
+never use subdescriptors during compute
+implement text
+implement selection
+implement grids
+"""

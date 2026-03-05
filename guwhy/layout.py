@@ -85,7 +85,7 @@ class Node:
 
 	visibility = PropertyDescriptor('show', literals=NodeVisibility)
 	positioning = PropertyDescriptor('auto', literals=NodePositioning)
-	z_index = PropertyDescriptor('0', dimensionless=True)
+	z_index = PropertyDescriptor('auto', dimensionless=True, literals=NodeZIndex)
 
 	origin = AxialDescriptor('auto', pixels=True, squares=True, percentages=True, literals=NodePosition)
 	origin_x = SubDescriptor(origin, Axis.HORIZONTAL)
@@ -150,18 +150,22 @@ class Node:
 	def next(self) -> Node | None:
 		return self._next
 
-	def __init__(self, **kwargs: dict[str, str]) -> None:
+	def __init__(self, **kwargs: str) -> None:
 		for descriptor in self.__descriptors__:
 			descriptor.setup(self)
 
-		_inner_offset = { Axis.HORIZONTAL: 0, Axis.VERTICAL: 0}
-		_outer_offset = { Axis.HORIZONTAL: 0, Axis.VERTICAL: 0}
-		_rect = { Direction.TOP: 0, Direction.RIGHT: 0, Direction.BOTTOM: 0, Direction.LEFT: 0 }
-		_clip = { Direction.TOP: 0, Direction.RIGHT: 0, Direction.BOTTOM: 0, Direction.LEFT: 0 }
+		self._inner_offset = { Axis.HORIZONTAL: 0, Axis.VERTICAL: 0}
+		self._outer_offset = { Axis.HORIZONTAL: 0, Axis.VERTICAL: 0}
+		self._rect = { Direction.TOP: 0, Direction.RIGHT: 0, Direction.BOTTOM: 0, Direction.LEFT: 0 }
+		self._clip = { Direction.TOP: 0, Direction.RIGHT: 0, Direction.BOTTOM: 0, Direction.LEFT: 0 }
 
 		self.id = None
 		self.classlist = []
 		self.applyStyles(**kwargs)
+
+	def __repr__(self) -> str:
+		return f'Node({self.origin_x.computed}, {self.origin_y.computed})' \
+			 + f' {self.width.computed}x{self.height.computed}'
 
 	def _computeStatic(self, axis: Axis) -> None:
 
@@ -175,6 +179,11 @@ class Node:
 		self.margin[_LAST_DIRECTION[axis]].computeStatic(axis)
 		self.padding[_FIRST_DIRECTION[axis]].computeStatic(axis)
 		self.padding[_LAST_DIRECTION[axis]].computeStatic(axis)
+		
+		if self.parent is None:
+			self.z_index.computeStatic(axis)
+		else:
+			self.z_index.computeStatic(axis, self.parent.z_index.computed)
 
 		# Compute offset
 		self._inner_offset[axis] = self.padding[_FIRST_DIRECTION[axis]].computed + self.padding[_LAST_DIRECTION[axis]].computed
@@ -237,19 +246,19 @@ class Node:
 				self.max_size[axis].computed
 			)
 
-			# Relative position
-			reference = self.parent.size[axis].computed
-			if self.positioning.value == NodePositioning.ABSOLUTE:
-				reference = root.size[axis].computed
+		# Relative position
+		reference = self.parent.size[axis].computed
+		if self.positioning.value == NodePositioning.ABSOLUTE:
+			reference = root.size[axis].computed
 
-			if self.origin[axis].unit == Unit.PERCENTAGE:
-				self.origin[axis].computed = int(reference * self.origin[axis].value / 100)
-			if self.origin[axis].unit == Unit.PERCENTAGE:
-				self.origin[axis].computed = int(reference * self.origin[axis].value / 100)
+		if self.origin[axis].unit == Unit.PERCENTAGE:
+			self.origin[axis].computed = int(reference * self.origin[axis].value / 100)
+		if self.origin[axis].unit == Unit.PERCENTAGE:
+			self.origin[axis].computed = int(reference * self.origin[axis].value / 100)
 
-			# Relative translation
-			if self.translate[axis].unit == Unit.PERCENTAGE:
-				self.translate[axis].computed = int(self.size[axis].computed * self.translate[axis].value / 100)
+		# Relative translation
+		if self.translate[axis].unit == Unit.PERCENTAGE:
+			self.translate[axis].computed = int(self.size[axis].computed * self.translate[axis].value / 100)
 
 	def _computeDynamic(self, axis: Axis) -> None:
 		pass
@@ -265,7 +274,7 @@ class Node:
 
 	def _computeRect(self, axis: Axis):
 		self._rect[_FIRST_DIRECTION[axis]] = self.origin[axis].computed
-		self._rect[_LAST_DIRECTION[axis]] = self.origin[axis].computed + self.size[axis]
+		self._rect[_LAST_DIRECTION[axis]] = self.origin[axis].computed + self.size[axis].computed - 1
 
 	def _computeClip(self, axis: Axis):
 		self_first = self._rect[_FIRST_DIRECTION[axis]]
@@ -273,11 +282,11 @@ class Node:
 
 		if self.parent is not None:
 			parent_first = self.parent._clip[_FIRST_DIRECTION[axis]]
-			parent_last = self.parent._clip[_LAST_DIRECTION[axis]]
-
-			if self.parent.overflow[_FIRST_DIRECTION[axis]].value == NodeOverflow.HIDE and parent_first > self_first:
+			if parent_first > self_first or self.overflow[_FIRST_DIRECTION[axis]].value == NodeOverflow.SHOW:
 				self_first = parent_first
-			if self.parent.overflow[_LAST_DIRECTION[axis]].value == NodeOverflow.HIDE and parent_last < self_last:
+
+			parent_last = self.parent._clip[_LAST_DIRECTION[axis]]
+			if parent_last < self_last or self.overflow[_LAST_DIRECTION[axis]].value == NodeOverflow.SHOW:
 				self_last = parent_last
 
 		self._clip[_FIRST_DIRECTION[axis]] = self_first
@@ -292,7 +301,7 @@ class Node:
 		if self._parent is not None:
 			self._parent.addChild(self)
 
-	def applyStyles(self, **kwargs: dict[str, str]) -> None:
+	def applyStyles(self, **kwargs: str) -> None:
 		for key, value in kwargs.items():
 			if key not in  self.__class__.__styles__:
 				raise ValueError(f'Unknown style: {key}')
@@ -315,7 +324,8 @@ class Node:
 			node._computeRelative(Axis.HORIZONTAL, self)
 			node._computeDynamic(Axis.HORIZONTAL)
 
-			# Compute position
+		# Compute position
+		for node in preorder:
 			node._computeInnerOrigin(Axis.HORIZONTAL)
 			node._computeManualPosition(Axis.HORIZONTAL)
 			node._computeAutoPosition(Axis.HORIZONTAL)
@@ -324,18 +334,19 @@ class Node:
 			node._computeRect(Axis.HORIZONTAL)
 			node._computeClip(Axis.HORIZONTAL)
 
-		# Compute horizontal axis
+		# Compute vertical axis
 		for node in postorder:
-			node._computePreferred(Axis.HORIZONTAL, self)
+			node._computePreferred(Axis.VERTICAL, self)
 
 		for node in preorder:
-			node._computeRelative(Axis.HORIZONTAL, self)
-			node._computeDynamic(Axis.HORIZONTAL)
+			node._computeRelative(Axis.VERTICAL, self)
+			node._computeDynamic(Axis.VERTICAL)
 
-			# Compute position
-			node._computeInnerOrigin(Axis.HORIZONTAL)
-			node._computeManualPosition(Axis.HORIZONTAL)
-			node._computeAutoPosition(Axis.HORIZONTAL)
+		# Compute position
+		for node in preorder:
+			node._computeInnerOrigin(Axis.VERTICAL)
+			node._computeManualPosition(Axis.VERTICAL)
+			node._computeAutoPosition(Axis.VERTICAL)
 
 			# Compute boundries
 			node._computeRect(Axis.VERTICAL)
@@ -344,114 +355,125 @@ class Node:
 	def paint(self, canvas: Canvas) -> bool:
 		if self.visibility.value != NodeVisibility.SHOW:
 			return False
-
+	
+		rect_top = self._rect[Direction.TOP]
+		rect_right = self._rect[Direction.RIGHT]
+		rect_bottom = self._rect[Direction.BOTTOM]
+		rect_left = self._rect[Direction.LEFT]
+	
+		clip_top = self._clip[Direction.TOP]
+		clip_right = self._clip[Direction.RIGHT]
+		clip_bottom = self._clip[Direction.BOTTOM]
+		clip_left = self._clip[Direction.LEFT]
+	
+		# Skip if zero-size or entirely outside clip
+		if rect_right < rect_left or rect_bottom < rect_top:
+			return True
+		if rect_right < clip_left or rect_left > clip_right or rect_bottom < clip_top or rect_top > clip_bottom:
+			return True
+		
+		drawn_top = max(rect_top, clip_top)
+		drawn_right = min(rect_right, clip_right)
+		drawn_bottom = min(rect_bottom, clip_bottom)
+		drawn_left = max(rect_left, clip_left)
+	
 		top_border = self.border[Direction.TOP].value
 		right_border = self.border[Direction.RIGHT].value
 		bottom_border = self.border[Direction.BOTTOM].value
 		left_border = self.border[Direction.LEFT].value
+	
+		has_top = top_border != NodeBorder.NONE
+		has_right = right_border != NodeBorder.NONE
+		has_bottom = bottom_border != NodeBorder.NONE
+		has_left = left_border != NodeBorder.NONE
 
-		top_visible = top_border != NodeBorder.NONE and self._clip[Direction.TOP] <= self._rect[Direction.TOP] <= self._clip[Direction.BOTTOM]
-		right_visible = right_border != NodeBorder.NONE and self._clip[Direction.LEFT] <= self._rect[Direction.RIGHT] <= self._clip[Direction.RIGHT]
-		bottom_visible = bottom_border != NodeBorder.NONE and self._clip[Direction.TOP] <= self._rect[Direction.BOTTOM] <= self._clip[Direction.BOTTOM]
-		left_visible = left_border != NodeBorder.NONE and self._clip[Direction.LEFT] <= self._rect[Direction.LEFT] <= self._clip[Direction.RIGHT]
+		z = self.z_index.computed
 
-		node = self if self.mouse_events.value == NodeMouseEvents.CAPTURE else None
+		# Fill nodes if necissary
+		if self.mouse_events.value == NodeMouseEvents.CAPTURE:
+			canvas.fillNodes(
+				self,
+				drawn_left, drawn_right,
+				drawn_top, drawn_bottom,
+				z
+			)
+	
+		# Check for degenerate rect shapes
+		if rect_left == rect_right:
+
+			# Single cell — collapse to a dot
+			if rect_top == rect_bottom:
+				if has_left or has_right or has_bottom or has_top:
+					canvas.drawChar('·', drawn_left, drawn_top, z)					
+
+				return True
+
+			# Single column — collapse to a vertical line
+			style = left_border if has_left else right_border if has_right else NodeBorder.NONE
+			if style != NodeBorder.NONE and clip_left <= rect_left <= clip_right:
+				canvas.drawVLine(_VLINE[style], drawn_left, drawn_top, drawn_bottom, z)
+
+			return True
+	
+		# Single row — collapse to a horizontal line
+		if rect_top == rect_bottom:
+			style = top_border if has_top else bottom_border if has_bottom else NodeBorder.NONE
+			if style != NodeBorder.NONE and clip_top <= rect_top <= clip_bottom:
+				canvas.drawHLine(_HLINE[style], drawn_left, drawn_right, drawn_top, z)
+				
+			return True
+	
+		top_visible = has_top and clip_top <= rect_top <= clip_bottom
+		right_visible = has_right and clip_left <= rect_right <= clip_right
+		bottom_visible = has_bottom and clip_top <= rect_bottom <= clip_bottom
+		left_visible = has_left and clip_left <= rect_left <= clip_right
 
 		# Draw sides
 		if top_visible:
-			canvas.drawHLine(
-				node, _HLINE[top_border],
-				self._clip[Direction.LEFT],
-				self._clip[Direction.RIGHT],
-				self._clip[Direction.TOP],
-				self.z_index.value
-			)
-
+			canvas.drawHLine(_HLINE[top_border], drawn_left,  drawn_right,  drawn_top, z)
 		if bottom_visible:
-			canvas.drawHLine(
-				node, _HLINE[bottom_border],
-				self._clip[Direction.LEFT],
-				self._clip[Direction.RIGHT],
-				self._clip[Direction.BOTTOM],
-				self.z_index.value
-			)
-
+			canvas.drawHLine(_HLINE[bottom_border], drawn_left,  drawn_right, drawn_bottom, z)
 		if right_visible:
-			canvas.drawVLine(
-				node, _VLINE[right_border],
-				self._clip[Direction.RIGHT],
-				self._clip[Direction.TOP],
-				self._clip[Direction.BOTTOM],
-				self.z_index.value
-			)
-
+			canvas.drawVLine(_VLINE[right_border], drawn_right, drawn_top, drawn_bottom, z)
 		if left_visible:
-			canvas.drawVLine(
-				node, _VLINE[left_border],
-				self._clip[Direction.LEFT],
-				self._clip[Direction.TOP],
-				self._clip[Direction.BOTTOM],
-				self.z_index.value
-			)
+			canvas.drawVLine(_VLINE[left_border], drawn_left,  drawn_top, drawn_bottom, z)
 
 		# Draw corners
 		if top_visible:
 			if left_visible:
 				canvas.drawChar(
-					node, _CORNERS[(Direction.TOP, Direction.LEFT)][(top_border, left_border)],
-					self._clip[Direction.LEFT],
-					self._clip[Direction.TOP],
-					self.z_index.value
+					_CORNERS[(Direction.TOP, Direction.LEFT)][(top_border, left_border)],
+					drawn_left, drawn_top, z
 				)
 
 			if right_visible:
 				canvas.drawChar(
-					node, _CORNERS[(Direction.TOP, Direction.RIGHT)][(top_border, right_border)],
-					self._clip[Direction.RIGHT],
-					self._clip[Direction.TOP],
-					self.z_index.value
+					_CORNERS[(Direction.TOP, Direction.RIGHT)][(top_border, right_border)],
+					drawn_right, drawn_top, z
 				)
 
 		if bottom_visible:
 			if left_visible:
 				canvas.drawChar(
-					node, _CORNERS[(Direction.BOTTOM, Direction.LEFT)][(bottom_border, left_border)],
-					self._clip[Direction.LEFT],
-					self._clip[Direction.BOTTOM],
-					self.z_index.value
+					_CORNERS[(Direction.BOTTOM, Direction.LEFT)][(bottom_border, left_border)],
+					drawn_left,  drawn_bottom, z
 				)
 
 			if right_visible:
 				canvas.drawChar(
-					node, _CORNERS[(Direction.BOTTOM, Direction.RIGHT)][(bottom_border, right_border)],
-					self._clip[Direction.RIGHT],
-					self._clip[Direction.BOTTOM],
-					self.z_index.value
+					_CORNERS[(Direction.BOTTOM, Direction.RIGHT)][(bottom_border, right_border)],
+					drawn_right, drawn_bottom, z
 				)
 		
 		# Draw background
-		if self.background.value == NodeBackground.OPAQUE or self.mouse_events.value == NodeMouseEvents.CAPTURE:
-			visible_width = self._clip[Direction.RIGHT] - self._clip[Direction.LEFT] + 1
-			if left_visible:
-				visible_width -= 1
-			if right_visible:
-				visible_width -= 1
+		if self.background.value == NodeBackground.OPAQUE:
+			bg_left = max(rect_left + (1 if left_visible else 0), clip_left)
+			bg_right = min(rect_right - (1 if right_visible else 0), clip_right)
+			bg_top = max(rect_top + (1 if top_visible else 0), clip_top)
+			bg_bottom = min(rect_bottom - (1 if bottom_visible else 0), clip_bottom)
 
-			visible_height = self._clip[Direction.BOTTOM] - self._clip[Direction.TOP] + 1
-			if left_visible:
-				visible_height -= 1
-			if right_visible:
-				visible_height -= 1
-
-			if visible_width > 0 and visible_height > 0:
-				canvas.drawRect(
-					node, ' ',
-					self._clip[Direction.LEFT] + 1,
-					self._clip[Direction.RIGHT] - 1,
-					self._clip[Direction.TOP] + 1,
-					self._clip[Direction.BOTTOM] - 1,
-					self.z_index.value
-				)
+			if bg_right >= bg_left and bg_bottom >= bg_top:
+				canvas.drawRect(' ', bg_left, bg_right, bg_top, bg_bottom, z)
 
 		return True
 
@@ -460,7 +482,6 @@ class Node:
 class Box(Node):
 	_children: list[Node]
 	_descendants: set[Node]
-
 	_automatic_children: list[Node]
 	_inner_origin: dict[Axis, int]
 
@@ -477,11 +498,18 @@ class Box(Node):
 	def descendants(self) -> set[Node]:
 		return self._descendants.copy()
 
-	def __init__(self) -> None:
-		super().__init__()
+	def __init__(self, **kwargs: str) -> None:
+		super().__init__(**kwargs)
 
 		self._children = list()
 		self._descendants = set()
+		self._inner_origin = { Axis.HORIZONTAL: 0, Axis.VERTICAL: 0}
+
+	def __repr__(self) -> str:
+		result = super().__repr__()
+		for child in self.children:
+			result += '\n\t' + '\n\t'.join(child.__repr__().splitlines())
+		return result
 
 	def _computeStatic(self, axis: Axis) -> None:
 		super()._computeStatic(axis)
@@ -490,9 +518,7 @@ class Box(Node):
 		self.child_gap.computeStatic(axis)
 
 		# Sort children by positioning
-		self._manual_children = []
 		self._automatic_children = []
-
 		for child in self.children:
 			if child.positioning.value == NodePositioning.AUTO:
 				self._automatic_children.append(child)
@@ -600,8 +626,9 @@ class Box(Node):
 
 	def _computeManualPosition(self, axis: Axis) -> None:
 		for child in self.children:
+			child.origin[axis].computed += child.translate[axis].computed
 			if child.positioning.value == NodePositioning.RELATIVE:
-				child.origin[axis].computed += self._inner_origin[axis]
+				child.origin[axis].computed += self.origin[axis].computed
 
 	def _computeAutoPosition(self, axis: Axis):
 		if self.axis.value == axis:
@@ -625,7 +652,7 @@ class Box(Node):
 
 		for child in self._automatic_children:
 			child.origin[axis].computed = (
-				self._inner_origin[axis]
+				offset
 				+ child.margin[_FIRST_DIRECTION[axis]].computed
 				+ child.translate[axis].computed
 			)
@@ -640,11 +667,11 @@ class Box(Node):
 				+ child.translate[axis].computed
 			)
 
-			if self.place_children_across.computed != BoxPlaceChildren.START:
+			if self.place_children_across.value != BoxPlaceChildren.START:
 				remaining = self.size[axis].computed - self._inner_offset[axis] - child.size[axis].computed - child._outer_offset[axis]
-				if self.place_children_across.computed == BoxPlaceChildren.CENTER:
+				if self.place_children_across.value == BoxPlaceChildren.CENTER:
 					child.origin[axis].computed += int(remaining / 2)
-				elif  self.place_children_across.computed == BoxPlaceChildren.END:
+				elif  self.place_children_across.value == BoxPlaceChildren.END:
 					child.origin[axis].computed += remaining
 
 	def addChild(self, child: Node) -> None:

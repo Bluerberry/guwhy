@@ -35,7 +35,7 @@ class Property:
 		if self.unit in (Unit.LITERAL, Unit.PERCENTAGE):
 			self.computed = default
 
-		elif self.unit == Unit.PIXEL:
+		elif self.unit in (Unit.PIXEL, Unit.DIMENSIONLESS):
 			self.computed = self.value
 
 		elif self.unit == Unit.SQUARE:
@@ -45,10 +45,10 @@ class Property:
 
 # -----------------------------------> Parsing
 
-_MATCH_PIXELS = regex.compile(r'^([0-9]+)px$')
-_MATCH_SQUARES = regex.compile(r'^([0-9]+)sq$')
+_MATCH_PIXELS = regex.compile(r'^(-?[0-9]+)px$')
+_MATCH_SQUARES = regex.compile(r'^(-?[0-9]+)sq$')
 _MATCH_PERCENTAGES = regex.compile(r'^(-?[0-9]+(?:\.[0-9]+)?)%$')
-_MATCH_DIMENSIONLESS = regex.compile(r'^([0-9]+)$')
+_MATCH_DIMENSIONLESS = regex.compile(r'^(-?[0-9]+)$')
 
 _PROPERTY_CACHE: dict[
 	tuple[str, bool, bool, bool, bool, bool, type[Enum] | None],
@@ -81,21 +81,21 @@ def _parse(descriptor: BaseDescriptor, property: Property, value: str):
 	elif descriptor.strings:
 		hit = _PROPERTY_CACHE[key] = Unit.STRING, value
 	else:
-		raise ValueError(f'Unsupported property: {value}')
+		raise ValueError(f'Unsupported property value: {value}')
 
 	property.unit, property.value = hit
 
 # -----------------------------------> Descriptors
 
 class Axis(Enum):
-	HORIZONTAL = auto()
-	VERTICAL = auto()
+	HORIZONTAL = 'horizontal'
+	VERTICAL = 'vertical'
 
 class Direction(Enum):
-	TOP = auto()
-	RIGHT = auto()
-	BOTTOM = auto()
-	LEFT = auto()
+	TOP = 'top'
+	RIGHT = 'right'
+	BOTTOM = 'bottom'
+	LEFT = 'left'
 
 class BaseDescriptor:
 	name: str
