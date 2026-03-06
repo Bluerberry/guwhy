@@ -49,6 +49,10 @@ class NodeMouseEvents(Enum):
 
 # ─────────────────────────────────── Box literals ───────────────────────────────────
 
+class BoxAxis(Enum):
+	HORIZONTAL = 'horizontal'
+	VERTICAL = 'vertical'
+
 class BoxPlaceChildren(Enum):
 	START = 'start'
 	CENTER = 'center'

@@ -1,6 +1,8 @@
 
+from __future__ import annotations
+
 # External libraries
-from typing import TYPE_CHECKING, Any, overload
+from typing import TYPE_CHECKING, Any, Literal, overload
 from enum import Enum, auto
 import re as regex
 
@@ -9,6 +11,13 @@ if TYPE_CHECKING:
 	from .layout import Node
 
 # ─────────────────────────────────── Properties ───────────────────────────────────
+
+# These are not enums, due to their hash functions being too damn slow
+HORIZONTAL, VERTICAL = 0, 1
+type Axis = Literal[0, 1]
+
+TOP, RIGHT, BOTTOM, LEFT = 0, 1, 2, 3
+type Direction = Literal[0, 1, 2, 3]
 
 class Unit(Enum):
 	PIXEL = auto()
@@ -40,7 +49,7 @@ class Property:
 			self.computed = self.value
 		elif self.unit == Unit.SQUARE:
 			self.computed = self.value
-			if axis == Axis.HORIZONTAL:
+			if axis == HORIZONTAL:
 				self.computed *= 2
 
 # ─────────────────────────────────── Parsing ───────────────────────────────────
@@ -86,16 +95,6 @@ def _parse(descriptor: BaseDescriptor, property: Property, value: str):
 	property.unit, property.value = hit
 
 # ─────────────────────────────────── Descriptors ───────────────────────────────────
-
-class Axis(Enum):
-	HORIZONTAL = 'horizontal'
-	VERTICAL = 'vertical'
-
-class Direction(Enum):
-	TOP = 'top'
-	RIGHT = 'right'
-	BOTTOM = 'bottom'
-	LEFT = 'left'
 
 class BaseDescriptor:
 	name: str
@@ -145,18 +144,18 @@ class PropertyDescriptor(BaseDescriptor):
 	def __get__(self, instance: Node | None, _: type[Node]) -> Property | PropertyDescriptor:
 		if instance is None:
 			return self
-		return getattr(instance, self.name)
+		return instance.__dict__[self.name]
 
 	def __set__(self, instance: Node, value: str) -> None:
-		property = getattr(instance, self.name)
+		property = instance.__dict__[self.name]
 		_parse(self, property, value)
 
 class AxialDescriptor(BaseDescriptor):
 	def setup(self, instance: Node) -> None:
-		setattr(instance, self.name, {
-			Axis.HORIZONTAL: Property(),
-			Axis.VERTICAL: Property()
-		})
+		setattr(instance, self.name, [
+			Property(),
+			Property()
+		])
 
 		self.__set__(
 			instance,
@@ -174,7 +173,7 @@ class AxialDescriptor(BaseDescriptor):
 	def __get__(self, instance: Node | None, _: type[Node]) -> dict[Axis, Property] | AxialDescriptor:
 		if instance is None:
 			return self
-		return getattr(instance, self.name)
+		return instance.__dict__[self.name]
 
 	def __set__(self, instance: Node, value: str) -> None:
 		parts = value.split()
@@ -183,18 +182,18 @@ class AxialDescriptor(BaseDescriptor):
 			case 2: horizontal, vertical = parts[0], parts[1]
 			case _: raise ValueError(f'Axial property must have 1-2 values: {value}')
 
-		property = getattr(instance, self.name)
-		_parse(self, property[Axis.HORIZONTAL], horizontal)
-		_parse(self, property[Axis.VERTICAL], vertical)
+		property = instance.__dict__[self.name]
+		_parse(self, property[HORIZONTAL], horizontal)
+		_parse(self, property[VERTICAL], vertical)
 
 class DirectionalDescriptor(BaseDescriptor):
 	def setup(self, instance: Node) -> None:
-		setattr(instance, self.name, {
-			Direction.TOP: Property(),
-			Direction.RIGHT: Property(),
-			Direction.BOTTOM: Property(),
-			Direction.LEFT: Property()
-		})
+		setattr(instance, self.name, [
+			Property(),
+			Property(),
+			Property(),
+			Property()
+		])
 
 		self.__set__(
 			instance,
@@ -212,7 +211,7 @@ class DirectionalDescriptor(BaseDescriptor):
 	def __get__(self, instance: Node | None, _: type[Node]) -> dict[Direction, Property] | DirectionalDescriptor:
 		if instance is None:
 			return self
-		return getattr(instance, self.name)
+		return instance.__dict__[self.name]
 
 	def __set__(self, instance: Node, value: str) -> None:
 		parts = value.split()
@@ -223,11 +222,11 @@ class DirectionalDescriptor(BaseDescriptor):
 			case 4: top, right, bottom, left = parts[0], parts[1], parts[2], parts[3]
 			case _: raise ValueError(f'Cardinal property must have 1-4 values: {value}')
 
-		property = getattr(instance, self.name)
-		_parse(self, property[Direction.TOP], top)
-		_parse(self, property[Direction.RIGHT], right)
-		_parse(self, property[Direction.BOTTOM], bottom)
-		_parse(self, property[Direction.LEFT], left)
+		property = instance.__dict__[self.name]
+		_parse(self, property[TOP], top)
+		_parse(self, property[RIGHT], right)
+		_parse(self, property[BOTTOM], bottom)
+		_parse(self, property[LEFT], left)
 
 class SubDescriptor:
 	def __init__(self, parent: BaseDescriptor, key: Axis | Direction):
@@ -251,9 +250,9 @@ class SubDescriptor:
 		if instance is None:
 			return self
 
-		property = getattr(instance, self.parent.name)
+		property = instance.__dict__[self.parent.name]
 		return property[self.key]
 
 	def __set__(self, instance: Node, value: str):
-		property = getattr(instance, self.parent.name)
+		property = instance.__dict__[self.parent.name]
 		_parse(self.parent, property[self.key], value)
