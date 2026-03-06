@@ -1,9 +1,3 @@
-"""
-micro_bench.py — cProfile on compute()
-
-Usage:
-    python micro_bench.py
-"""
 
 import cProfile
 import pstats
@@ -15,8 +9,8 @@ from guwhy.layout import Box
 # ─────────────────────── scene ───────────────────────
 
 def build():
-    W, H = 200, 80
-    target = 500
+    W, H = 500, 250
+    target = 100
     panels = max(2, round((target / 30) ** 0.5))
     rows_per_panel = max(2, round(math.sqrt(target / (panels * 3))))
     cells_per_row  = max(2, round(target / (panels * rows_per_panel * 3)))
@@ -60,7 +54,7 @@ root.compute()  # warm up
 
 pr = cProfile.Profile()
 pr.enable()
-for _ in range(500):
+for _ in range(1000):
     root.compute()
 pr.disable()
 

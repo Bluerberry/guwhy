@@ -529,6 +529,10 @@ class Box(Node):
 		**kwargs: str
 	) -> None:
 
+		# Setup privates
+		self._children = list()
+		self._descendants = set()
+
 		super().__init__(
 			id=id,
 			classlist=classlist,
@@ -537,8 +541,6 @@ class Box(Node):
 		)
 
 		# Setup children
-		self._children = list()
-		self._descendants = set()
 		for child in children:
 			child.setParent(self)
 
@@ -632,7 +634,6 @@ class Box(Node):
 		delta = self.size[axis].computed - self._inner_offset[axis]
 		if (gaps := len(self._automatic_children) - 1) > 0:
 			delta -= self.child_gap.computed * gaps
-
 		for child in self._automatic_children:
 			delta -= child.size[axis].computed + child._outer_offset[axis]
 
@@ -640,7 +641,7 @@ class Box(Node):
 			return 0
 
 		# Find eligible children
-		eligible = [
+		eligible: list[Node] = [
 			child for child in self._automatic_children
 			if child.size[axis].value == NodeSize.FIT and delta < 0
 			or child.size[axis].value == NodeSize.GROW
@@ -650,40 +651,66 @@ class Box(Node):
 			return delta
 
 		sign = 1 if delta > 0 else -1
+		delta *= sign
 
-		eligible.sort(
-			key=lambda node: node.size[axis].computed,
-			reverse=delta < 0
-		)
+		# Sort smallest-first when growing, largest-first when shrinking
+		eligible.sort(key=lambda node: sign * node.size[axis].computed)
 
-		# Discrete flood
-		while delta != 0:
+		# Bulk flood fill algorithm
+		while delta > 0:
 			reference = None
-			for child in eligible:
+			step = _INFINITY
+			n = 0
+
+			# Collect group
+			while n < len(eligible):
+				child = eligible[n]
 				child_size = child.size[axis]
+				headroom = (child.max_size[axis].computed - child_size.computed)	\
+						   if sign > 0 else											\
+						   (child_size.computed - child.min_size[axis].computed)
 
-				# Skip children that would violate limits
-				if sign + child_size.computed > child.max_size[axis].computed:
-					continue
-				if sign + child_size.computed < child.min_size[axis].computed:
-					continue
+				if headroom <= 0:
+					eligible.pop(n)
+					continue # Not necissary to incr n
 
-				# All children at the reference size increase
 				if reference is None:
 					reference = sign * child_size.computed
-				elif sign * child_size.computed > reference:
-					break
 
-				delta -= sign
-				child_size.computed += sign
+				else:
+					difference = sign * child_size.computed - reference
+					if difference > 0:
 
-				if delta == 0:
-					break
+						# Step limit 1 - node after group
+						if difference < step:
+							step = difference
+						break
+
+				# Step limit 2 - smallest headroom
+				if headroom < step:
+					step = headroom
+
+				n += 1
 
 			if reference is None:
-				break # All eligible children are clamped - nothing more can be done
+				break # All nodes are at their limit
 
-		return delta
+			# Step limit 3 - remaining spread over group
+			remaining = delta // n
+			if remaining < step:
+				step = remaining
+
+			# Apply step
+			if step == 0:
+				for child in eligible[:delta]:
+					child.size[axis].computed += sign
+				break
+
+			for child in eligible[:n]:
+				child.size[axis].computed += sign * step
+			delta -= n * step
+
+		return sign * delta
 
 	def _clampChildren(self, axis: Axis) -> None:
 		self_inner_size = self.size[axis].computed - self._inner_offset[axis]
