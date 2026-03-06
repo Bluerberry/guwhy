@@ -38,10 +38,6 @@ for y in range(H):
 
 """ TODO
 place_children_along/across should have an axial property place_children
-improve canvas
-    - currently slow as fuck
-    - support negative layers
-    - prevent z=999 from creating 998 new layers
 implement text
 implement selection
 implement grids?
