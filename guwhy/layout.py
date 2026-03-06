@@ -26,7 +26,7 @@ _VLINE = { NodeBorder.SINGLE: '│', NodeBorder.DOUBLE: '║' }
 
 # Maps (h_side, v_side) → (h_style, v_style) → corner symbols
 _CORNERS: dict[
-	tuple[Direction, Direction], 
+	tuple[Direction, Direction],
 	dict[tuple[NodeBorder, NodeBorder], str]
 ] = {
 	(TOP, LEFT): {
@@ -172,10 +172,10 @@ class Node:
 	def __init__(self, *,
 		id: str | None = None,
 		classlist: list[str] = [],
-		parent: Box | None = None, 
+		parent: Box | None = None,
 		**kwargs: str
 	) -> None:
-		
+
 		# Setup descriptors
 		for descriptor in self.__descriptors__:
 			descriptor.setup(self)
@@ -273,43 +273,7 @@ class Node:
 			parent_size.computed = external_size
 
 	def _computeRelativeProperties(self, axis: Axis, root: Node) -> None:
-		if self._parent is None:
-			return
-
-		parent_size = self._parent.size[axis]
-		self_min_size = self.min_size[axis]
-		self_max_size = self.max_size[axis]
-
-		# Relative size
-		self_size = self.size[axis]
-		if self_size.unit == Unit.PERCENTAGE:
-			self_size.computed = int(parent_size.computed * self_size.value / 100)
-
-		# Relative limits
-		if self_min_size.unit == Unit.PERCENTAGE:
-			self_min_size.computed = int(parent_size.computed * self_min_size.value / 100)
-		if self_max_size.unit == Unit.PERCENTAGE:
-			self_max_size.computed = int(parent_size.computed * self_max_size.value / 100)
-
-		# Final clamp
-		self_size.clamp(
-			self_min_size.computed,
-			self_max_size.computed
-		)
-
-		# Relative position
-		reference = parent_size.computed
-		if self.positioning.value == NodePositioning.ABSOLUTE:
-			reference = root.size[axis].computed
-
-		self_origin = self.origin[axis]
-		if self_origin.unit == Unit.PERCENTAGE:
-			self_origin.computed = int(reference * self_origin.value / 100)
-
-		# Relative translation
-		self_translate = self.translate[axis]
-		if self_translate.unit == Unit.PERCENTAGE:
-			self_translate.computed = int(self_size.computed * self_translate.value / 100)
+		pass
 
 	def _computeDynamicChildren(self, axis: Axis) -> None:
 		pass
@@ -342,7 +306,7 @@ class Node:
 		if self._parent is not None:
 			parent_clip_first = self._parent._clip[first_direction]
 			parent_clip_last = self._parent._clip[last_direction]
-			
+
 			if parent_clip_first > self_rect_first or self.overflow[first_direction].value == NodeOverflow.SHOW:
 				self_rect_first = parent_clip_first
 			if parent_clip_last < self_rect_last or self.overflow[last_direction].value == NodeOverflow.SHOW:
@@ -560,15 +524,15 @@ class Box(Node):
 	def __init__(self, *,
 		id: str | None = None,
 		classlist: list[str] = [],
-		parent: Box | None = None, 
-		children: list[Node] = [], 
+		parent: Box | None = None,
+		children: list[Node] = [],
 		**kwargs: str
 	) -> None:
-		
+
 		super().__init__(
-			id=id, 
-			classlist=classlist, 
-			parent=parent, 
+			id=id,
+			classlist=classlist,
+			parent=parent,
 			**kwargs
 		)
 
@@ -609,6 +573,43 @@ class Box(Node):
 
 		super()._computePreferredSize(axis, root)
 
+	def _computeRelativeProperties(self, axis: Axis, root: Node) -> None:
+		self_size = self.size[axis]
+		for child in self._children:
+			child_min_size = child.min_size[axis]
+			child_max_size = child.max_size[axis]
+
+			# Relative size
+			child_size = child.size[axis]
+			if child_size.unit == Unit.PERCENTAGE:
+				child_size.computed = int(self_size.computed * child_size.value / 100)
+
+			# Relative limits
+			if child_min_size.unit == Unit.PERCENTAGE:
+				child_min_size.computed = int(self_size.computed * child_min_size.value / 100)
+			if child_max_size.unit == Unit.PERCENTAGE:
+				child_max_size.computed = int(self_size.computed * child_max_size.value / 100)
+
+			# Final clamp
+			child_size.clamp(
+				child_min_size.computed,
+				child_max_size.computed
+			)
+
+			# Relative position
+			reference = self_size.computed
+			if child.positioning.value == NodePositioning.ABSOLUTE:
+				reference = root.size[axis].computed
+
+			child_origin = child.origin[axis]
+			if child_origin.unit == Unit.PERCENTAGE:
+				child_origin.computed = int(reference * child_origin.value / 100)
+
+			# Relative translation
+			child_translate = child.translate[axis]
+			if child_translate.unit == Unit.PERCENTAGE:
+				child_translate.computed = int(child_size.computed * child_translate.value / 100)
+
 	def _computeDynamicChildren(self, axis: Axis) -> None:
 
 		# Flood children along axis
@@ -619,7 +620,7 @@ class Box(Node):
 			if self.child_gap.value == BoxChildGap.AUTO:
 				if (gaps := len(self._automatic_children) - 1) > 0:
 					self.child_gap.computed = int(remaining / gaps)
-			
+
 			return
 
 		# Clamp children across axis
@@ -692,7 +693,7 @@ class Box(Node):
 			child_size = child.size[axis]
 
 			if child_size.value == NodeSize.GROW or (
-				child_size.value == NodeSize.FIT and 
+				child_size.value == NodeSize.FIT and
 				child_size.computed + child_outer_offset > self_inner_size
 			):
 				child_size.clamp(
@@ -712,7 +713,7 @@ class Box(Node):
 
 	def _computeAutoPositionAlong(self, axis: Axis):
 		first_direction = _FIRST_DIRECTION[axis]
-		
+
 		# Compute internal origin
 		offset = self.origin[axis].computed + self.padding[first_direction].computed
 		if self.border[first_direction].value != NodeBorder.NONE:

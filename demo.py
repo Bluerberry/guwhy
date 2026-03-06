@@ -1,5 +1,5 @@
 
-from guwhy.layout import Box, Node
+from guwhy.layout import Box
 from guwhy.canvas import Canvas
 
 # ─────────────────────────────────── Layout ───────────────────────────────────
@@ -10,18 +10,14 @@ canvas = Canvas(W, H)
 root = Box(
     size = f'{W}px {H}px',
     border = 'double',
-    place_children_along = 'center',
-    place_children_across = 'center',
     children=[
         Box(
-            size = '50%',
+            size = '60%',
             border = 'single',
-            children = [
-                Node(
-                    size = 'grow',
-                    border = 'single'
-                )
-            ]
+        ),
+        Box(
+            size = 'grow',
+            border = 'single',
         )
     ]
 )
