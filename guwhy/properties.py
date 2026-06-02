@@ -3,7 +3,7 @@ from __future__ import annotations
 
 # External libraries
 from typing import TYPE_CHECKING, Any, Literal, overload
-from enum import Enum, auto
+from enum import Enum
 import re as regex
 
 # Internal libraries
@@ -16,16 +16,14 @@ if TYPE_CHECKING:
 HORIZONTAL, VERTICAL = 0, 1
 type Axis = Literal[0, 1]
 
+ALONG, ACROSS = 0, 1
+type RelativeAxis = Literal[0, 1]
+
 TOP, RIGHT, BOTTOM, LEFT = 0, 1, 2, 3
 type Direction = Literal[0, 1, 2, 3]
 
-class Unit(Enum):
-	PIXEL = auto()
-	SQUARE = auto()
-	PERCENTAGE = auto()
-	DIMENSIONLESS = auto()
-	LITERAL = auto()
-	STRING = auto()
+PIXEL, SQUARE, PERCENTAGE, DIMENSIONLESS, LITERAL, STRING = 0, 1, 2, 3, 4, 5
+type Unit = Literal[0, 1, 2, 3, 4, 5]
 
 class Property:
 	__slots__ = 'unit', 'value', 'computed'
@@ -43,11 +41,11 @@ class Property:
 			self.computed = max
 
 	def computeStatic(self, axis: Axis, default: Any = 0) -> None:
-		if self.unit in (Unit.LITERAL, Unit.PERCENTAGE):
+		if self.unit in (LITERAL, PERCENTAGE):
 			self.computed = default
-		elif self.unit in (Unit.PIXEL, Unit.DIMENSIONLESS):
+		elif self.unit in (PIXEL, DIMENSIONLESS):
 			self.computed = self.value
-		elif self.unit == Unit.SQUARE:
+		elif self.unit == SQUARE:
 			self.computed = self.value
 			if axis == HORIZONTAL:
 				self.computed *= 2
@@ -78,17 +76,17 @@ def _parse(descriptor: BaseDescriptor, property: Property, value: str):
 	if key in _PROPERTY_CACHE:
 		hit = _PROPERTY_CACHE[key]
 	elif descriptor.pixels and (m := _MATCH_PIXELS.match(value)):
-		hit = _PROPERTY_CACHE[key] = Unit.PIXEL, int(m.group(1))
+		hit = _PROPERTY_CACHE[key] = PIXEL, int(m.group(1))
 	elif descriptor.squares and (m := _MATCH_SQUARES.match(value)):
-		hit = _PROPERTY_CACHE[key] = Unit.SQUARE, int(m.group(1))
+		hit = _PROPERTY_CACHE[key] = SQUARE, int(m.group(1))
 	elif descriptor.percentages and (m := _MATCH_PERCENTAGES.match(value)):
-		hit = _PROPERTY_CACHE[key] = Unit.PERCENTAGE, float(m.group(1))
+		hit = _PROPERTY_CACHE[key] = PERCENTAGE, float(m.group(1))
 	elif descriptor.dimensionless and (m := _MATCH_DIMENSIONLESS.match(value)):
-		hit = _PROPERTY_CACHE[key] = Unit.DIMENSIONLESS, int(m.group(1))
+		hit = _PROPERTY_CACHE[key] = DIMENSIONLESS, int(m.group(1))
 	elif descriptor.literals and value in descriptor.literals:
-		hit = _PROPERTY_CACHE[key] = Unit.LITERAL, descriptor.literals(value)
+		hit = _PROPERTY_CACHE[key] = LITERAL, descriptor.literals(value)
 	elif descriptor.strings:
-		hit = _PROPERTY_CACHE[key] = Unit.STRING, value
+		hit = _PROPERTY_CACHE[key] = STRING, value
 	else:
 		raise ValueError(f'Unsupported property value: {value}')
 
@@ -186,6 +184,42 @@ class AxialDescriptor(BaseDescriptor):
 		_parse(self, property[HORIZONTAL], horizontal)
 		_parse(self, property[VERTICAL], vertical)
 
+class RelativeAxialDescriptor(BaseDescriptor):
+	def setup(self, instance: Node) -> None:
+		setattr(instance, self.name, [
+			Property(),
+			Property()
+		])
+
+		self.__set__(
+			instance,
+			self.default
+		)
+
+	@overload
+	def __get__(self, instance: None, _: type[Node]) -> RelativeAxialDescriptor:
+		...
+
+	@overload
+	def __get__(self, instance: Node, _: type[Node]) -> dict[RelativeAxis, Property]:
+		...
+
+	def __get__(self, instance: Node | None, _: type[Node]) -> dict[RelativeAxis, Property] | RelativeAxialDescriptor:
+		if instance is None:
+			return self
+		return instance.__dict__[self.name]
+
+	def __set__(self, instance: Node, value: str) -> None:
+		parts = value.split()
+		match len(parts):
+			case 1: along, across = parts[0], parts[0]
+			case 2: along, across = parts[0], parts[1]
+			case _: raise ValueError(f'Relative axial property must have 1-2 values: {value}')
+
+		property = instance.__dict__[self.name]
+		_parse(self, property[ALONG], along)
+		_parse(self, property[ACROSS], across)
+
 class DirectionalDescriptor(BaseDescriptor):
 	def setup(self, instance: Node) -> None:
 		setattr(instance, self.name, [
@@ -229,7 +263,7 @@ class DirectionalDescriptor(BaseDescriptor):
 		_parse(self, property[LEFT], left)
 
 class SubDescriptor:
-	def __init__(self, parent: BaseDescriptor, key: Axis | Direction):
+	def __init__(self, parent: BaseDescriptor, key: Axis | RelativeAxis | Direction):
 		self.parent = parent
 		self.key = key
 

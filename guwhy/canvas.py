@@ -1,10 +1,9 @@
 
 # External libraries
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 # Internal libraries
-if TYPE_CHECKING:
-	from .layout import Node
+from .layout import Node
 
 # ─────────────────────────────────── Canvas ───────────────────────────────────
 
@@ -71,27 +70,5 @@ class Canvas:
 			start = x1 + y * self._width
 			end = x2 + y * self._width
 			self._layers[z]['nodes'][start:end] = [node] * (x2 - x1)
-
-	def compress(self):
-		layers = [layer for _, layer in sorted(
-			self._layers.items(),
-			key=lambda item: item[0],
-			reverse=True
-		)]
-
-		pixels = layers[0]['pixels'].copy()
-		nodes = layers[0]['nodes'].copy()
-
-		for layer in layers[1:]:
-			lp = layer['pixels']
-			ln = layer['nodes']
-
-			for i in range(self._size):
-				if pixels[i] is None:
-					pixels[i] = lp[i]
-				if nodes[i] is None:
-					nodes[i]  = ln[i]
-
-		pixels = [' ' if p is None else p for p in pixels]
 
 		return pixels, nodes

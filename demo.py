@@ -13,7 +13,7 @@ root = Box(
     children=[
         Box(
             size = '60%',
-            border = 'single',
+            border = 'single'
         ),
         Box(
             size = 'grow',
@@ -29,12 +29,6 @@ print(root)
 
 root.paint(canvas)
 pixels, nodes = canvas.compress()
+
 for y in range(H):
     print(''.join(pixels[y*W:(y+1)*W]))
-
-""" TODO
-place_children_along/across should have an axial property place_children
-implement text
-implement selection
-implement grids?
-"""

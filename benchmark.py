@@ -5,6 +5,7 @@ import io
 import math
 
 from guwhy.layout import Box
+from guwhy.canvas import Canvas
 
 # ─────────────────────── scene ───────────────────────
 
@@ -37,26 +38,29 @@ def build():
             row.setParent(panel)
             for c in range(cells_per_row):
                 sz = ["grow grow", "50% fit", "fit fit", "grow 3sq"][c % 4]
-                cell = Box(size=sz, border="single",
+                cell = Box(z_index="2", size=sz, border="single",
                            place_children_along="center", place_children_across="center",
                            padding="1px")
                 cell.setParent(row)
                 Box(size="75% 75%", border="single" if c % 2 == 0 else "none",
                     place_children_along="center", place_children_across="center").setParent(cell)
-                Box(size="2sq", positioning="relative", origin="100% 0px",
+                Box(z_index='3', size="2sq", positioning="relative", origin="100% 0px",
                     translate="-50% -50%", border="single", overflow="show").setParent(cell)
     return root
 
 # ─────────────────────── profile ───────────────────────
 
 root = build()
-root.compute()  # warm up
+root.compute()
 
 pr = cProfile.Profile()
-pr.enable()
+
 for _ in range(1000):
-    root.compute()
-pr.disable()
+    canvas = Canvas(500, 250)
+    root.paint(canvas)
+    pr.enable()
+    canvas.compress()
+    pr.disable()
 
 s = io.StringIO()
 ps = pstats.Stats(pr, stream=s).sort_stats("cumulative")
