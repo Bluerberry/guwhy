@@ -6,7 +6,7 @@ from enum import Enum, auto
 from typing import Callable, Iterable
 
 # Internal
-from layout import *
+from .layout import *
 
 # Types
 type SelectionSet = set[Node]

@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Generator
 
 # Internal libraries
 from .properties import *
-from .selection import *
 from .literals import *
 
 if TYPE_CHECKING:
@@ -20,14 +19,6 @@ _INFINITY = float('inf')
 # Maps axis → directions
 _FIRST_DIRECTION: tuple[Direction, ...] = (LEFT, TOP)
 _LAST_DIRECTION: tuple[Direction, ...] = (RIGHT, BOTTOM)
-
-# Maps box axis → axis
-_BOX_AXIS: dict[
-	BoxAxis, Axis
-] = { 
-	BoxAxis.HORIZONTAL: HORIZONTAL, 
-	BoxAxis.VERTICAL: VERTICAL
-}
 
 # Maps border style → line symbols
 _HLINE = { NodeBorder.SINGLE: '─', NodeBorder.DOUBLE: '═' }
@@ -255,9 +246,9 @@ class Node:
 
 		# Prepare compute
 		for node in preorder:
-			node._computeIntrinsic()
-			node._computeIntrinsicAxial(HORIZONTAL)
-			node._computeIntrinsicAxial(VERTICAL)
+			node._prepareCompute()
+			node._prepareComputeAxial(HORIZONTAL)
+			node._prepareComputeAxial(VERTICAL)
 
 		# Compute horizontal axis
 		for node in postorder:
@@ -376,7 +367,9 @@ class Node:
 			if right_visible:
 				canvas.setChar(_CORNERS[(BOTTOM, RIGHT)][(bottom_border, right_border)], drawn_right, drawn_bottom)
 
-	def select(self, selector: str) -> Selection:
+	def select(self, selector: str):
+		from .selection import Selection
+
 		nodes = {self._root}
 		if isinstance(self._root, Parent):
 			nodes |= self._root.descendants
@@ -386,7 +379,7 @@ class Node:
 
 	# ──── Compute pipeline
 
-	def _computeIntrinsic(self) -> None:
+	def _prepareCompute(self) -> None:
 
 		# Prepare properties
 		if self.z_index.value != NodeZIndex.AUTO:
@@ -396,7 +389,7 @@ class Node:
 		else:
 			self.z_index.computed = 0
 
-	def _computeIntrinsicAxial(self, axis: Axis) -> None:
+	def _prepareComputeAxial(self, axis: Axis) -> None:
 
 		# Get properties
 		first_direction = _FIRST_DIRECTION[axis]
@@ -428,6 +421,8 @@ class Node:
 		if self.border[last_direction].value != NodeBorder.NONE:
 			self._inner_offset[axis] += 1
 
+	def _computePreferredAxial(self, axis: Axis, root: Node) -> None:
+
 		# Compute preferred size
 		self_size = self.size[axis]
 		if self_size.value in (NodeSize.GROW, NodeSize.FIT) or self_size.unit == PERCENTAGE:
@@ -438,8 +433,6 @@ class Node:
 			self.min_size[axis].computed,
 			self.max_size[axis].computed
 		)
-
-	def _computePreferredAxial(self, axis: Axis, root: Node) -> None:
 
 		# NOTE this code is only valid if the parent is a box. If grids eventually get implemented, this will not work
 
@@ -620,8 +613,8 @@ class Parent(Node, metaclass=AbstractNode):
 
 	# ──── Compute pipeline
 
-	def _computeIntrinsic(self) -> None:
-		super()._computeIntrinsic()
+	def _prepareCompute(self) -> None:
+		super()._prepareCompute()
 
 		# Compute intermediaries
 		self._filtered_children = []
@@ -634,7 +627,7 @@ class Parent(Node, metaclass=AbstractNode):
 			self._filtered_children.append(child)
 			if child.positioning.value == NodePositioning.AUTO:
 				self._automatic_children.append(child)
-
+		
 	def _computeContextualAxial(self, axis: Axis, root: Node) -> None:
 		super()._computeContextualAxial(axis, root)
 
@@ -688,18 +681,23 @@ class Box(Parent):
 
 	# ──── Compute pipeline
 
-	def _computeIntrinsic(self) -> None:
-		super()._computeIntrinsic()
+	def _prepareCompute(self) -> None:
+		super()._prepareCompute()
 
 		# Prepare properties
 		self.child_gap.prepare(self.axis.value, default=0)
 
+	def _computePreferredAxial(self, axis: Literal[0] | Literal[1], root: Node) -> None:
+		
 		# Compute preferred size
-		if self.child_gap.value != BoxChildGap.AUTO:
-			self_size = self.size[_BOX_AXIS[self.axis.value]]
+		if self.child_gap.value != BoxChildGap.AUTO and _compareAxis(axis, self.axis.value):
+			self_size = self.size[axis]
+
 			if self_size.value in (NodeSize.GROW, NodeSize.FIT) or self_size.unit == PERCENTAGE:
 				if (gaps := len(self._automatic_children) - 1) > 0:
 					self_size.computed += self.child_gap.computed * gaps
+		
+		super()._computePreferredAxial(axis, root)
 
 	def _computeContextualAxial(self, axis: Axis, root: Node) -> None:
 		super()._computeContextualAxial(axis, root)
