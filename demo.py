@@ -1,34 +1,26 @@
 
-from guwhy.layout import Box
+from guwhy.layout import Node, Box
 from guwhy.canvas import Canvas
 
-# ─────────────────────────────────── Layout ───────────────────────────────────
-
 W, H = 40, 20
-canvas = Canvas(W, H)
 
 root = Box(
     size = f'{W}px {H}px',
     border = 'double',
     children=[
-        Box(
+        Node(
             size = '60%',
             border = 'single'
         ),
-        Box(
+        Node(
             size = 'grow',
             border = 'single',
         )
     ]
 )
 
-# ─────────────────────────────────── Run ───────────────────────────────────
-
 root.compute()
-print(root)
-
-root.paint(canvas)
-pixels, nodes = canvas.compress()
+canvas = Canvas(W, H, root)
 
 for y in range(H):
-    print(''.join(pixels[y*W:(y+1)*W]))
+    print(''.join(canvas._pixel_buffer[y*W:(y+1)*W]))

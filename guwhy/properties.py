@@ -40,7 +40,7 @@ class Property:
 		elif self.computed > max:
 			self.computed = max
 
-	def computeStatic(self, axis: Axis, default: Any = 0) -> None:
+	def prepare(self, axis: Axis, default: Any) -> None:
 		if self.unit in (LITERAL, PERCENTAGE):
 			self.computed = default
 		elif self.unit in (PIXEL, DIMENSIONLESS):

@@ -1,74 +1,111 @@
 
 # External libraries
-from typing import Any
+from typing import Generator
 
 # Internal libraries
-from .layout import Node
+from .layout import *
+from .literals import *
+
+# ─────────────────────────────────── Utility ───────────────────────────────────
+
+def _paintTraversal(node: Node) -> Generator[Node, None, None]:
+	if node.visibility.value != NodeVisibility.SHOW:
+		return
+	
+	# Collect nodes
+	index = 0
+	nodes = [node]
+
+	while index < len(nodes):
+		parent = nodes[index]
+		index += 1
+
+		if isinstance(parent, Parent):
+			nodes.extend([
+				child for child in parent.children
+				if child.visibility.value == NodeVisibility.SHOW
+			])
+
+	# Sort by z-index
+	nodes.sort(key=lambda node: node.z_index.computed)
+	yield from nodes
 
 # ─────────────────────────────────── Canvas ───────────────────────────────────
 
 class Canvas:
-	def __init__(self, width: int, height: int):
+	_size: int
+	_width: int
+	_height: int
+	_pixel_buffer: list[str]
+	_callback_buffer: list[Node | None]
+
+	def __init__(self, width: int, height: int, root: Node):
 		self._size = width * height
 		self._height = height
 		self._width = width
 
-		self._layers: dict[int, dict[str, list[Any | None]]] = {
-			0: {
-				'pixels': [None] * self._size,
-				'nodes': [None] * self._size
-			}
-		}
+		self._pixel_buffer = [' '] * self._size
+		self._callback_buffer = [None] * self._size
 
-	def _ensureLayerExists(self, z: int):
-		if z not in self._layers:
-			self._layers[z] = {
-				'pixels': [None] * self._size,
-				'nodes': [None] * self._size
-			}
+		for node in _paintTraversal(root):
+			node.paint(self)
+	
+	def setChar(self, char: str, x: int, y: int):
+		self._pixel_buffer[x + y * self._width] = char
 
-	def drawChar(self, char: str, x: int, y: int, z: int):
-		self._ensureLayerExists(z)
-		self._layers[z]['pixels'][x + y * self._width] = char
-
-	def drawRect(self, char: str, x1: int, x2: int, y1: int, y2: int, z: int):
-		self._ensureLayerExists(z)
+	def setRect(self, char: str, x1: int, x2: int, y1: int, y2: int):
 
 		# Because end is non-inclusive
 		x2 += 1
 		y2 += 1
 
+		# Full width case
+		if x2 - x1 == self._width:
+			start = x1 + y1 * self._width
+			end = x2 + y2 * self._width
+			self._pixel_buffer[start:end] = [char] * ((x2 - x1) * (y2 - y1))
+			return
+
+		# Regular case
 		for y in range(y1, y2):
 			start = x1 + y * self._width
 			end = x2 + y * self._width
-			self._layers[z]['pixels'][start:end] = [char] * (x2 - x1)
+			self._pixel_buffer[start:end] = [char] * (x2 - x1)
 
-	def drawHLine(self, char: str, x1: int, x2: int, y: int, z: int):
-		self._ensureLayerExists(z)
+	def setHLine(self, char: str, x1: int, x2: int, y: int):
 
-		x2 += 1 # Because end is non-inclusive
+		# Because end is non-inclusive
+		x2 += 1
+
 		start = x1 + y * self._width
 		end = x2 + y * self._width
-		self._layers[z]['pixels'][start:end] = [char] * (x2 - x1)
+		self._pixel_buffer[start:end] = [char] * (x2 - x1)
 
-	def drawVLine(self, char: str, x: int, y1: int, y2: int, z: int):
-		self._ensureLayerExists(z)
+	def setVLine(self, char: str, x: int, y1: int, y2: int):
 
-		y2 += 1 # Because end is non-inclusive
+		# Because end is non-inclusive
+		y2 += 1
+
 		start = x + y1 * self._width
 		end = x + y2 * self._width
-		self._layers[z]['pixels'][start:end:self._width] = [char] * (y2 - y1)
+		self._pixel_buffer[start:end:self._width] = [char] * (y2 - y1)
 
-	def fillNodes(self, node: Node, x1: int, x2: int, y1: int, y2: int, z: int):
-		self._ensureLayerExists(z)
+	def setCallback(self, node: Node, x1: int, x2: int, y1: int, y2: int):
 
 		# Because end is non-inclusive
 		x2 += 1
 		y2 += 1
 
+		# Full width case
+		if x2 - x1 == self._width:
+			start = x1 + y1 * self._width
+			end = x2 + y2 * self._width
+			self._callback_buffer[start:end] = [node] * ((x2 - x1) * (y2 - y1))
+			return
+
+		# Regular case
 		for y in range(y1, y2):
 			start = x1 + y * self._width
 			end = x2 + y * self._width
-			self._layers[z]['nodes'][start:end] = [node] * (x2 - x1)
+			self._callback_buffer[start:end] = [node] * (x2 - x1)
 
-		return pixels, nodes

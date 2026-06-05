@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Generator
 
 # Internal libraries
 from .properties import *
+from .selection import *
 from .literals import *
 
 if TYPE_CHECKING:
@@ -19,6 +20,14 @@ _INFINITY = float('inf')
 # Maps axis → directions
 _FIRST_DIRECTION: tuple[Direction, ...] = (LEFT, TOP)
 _LAST_DIRECTION: tuple[Direction, ...] = (RIGHT, BOTTOM)
+
+# Maps box axis → axis
+_BOX_AXIS: dict[
+	BoxAxis, Axis
+] = { 
+	BoxAxis.HORIZONTAL: HORIZONTAL, 
+	BoxAxis.VERTICAL: VERTICAL
+}
 
 # Maps border style → line symbols
 _HLINE = { NodeBorder.SINGLE: '─', NodeBorder.DOUBLE: '═' }
@@ -79,19 +88,46 @@ def _compareAxis(axis: Axis, box_axis: BoxAxis) -> bool:
 	return axis == HORIZONTAL and box_axis == BoxAxis.HORIZONTAL \
 		or axis == VERTICAL and box_axis == BoxAxis.VERTICAL
 
-# ─────────────────────────────────── Node ───────────────────────────────────
+# ─────────────────────────────────── Nodes ───────────────────────────────────
+
+class AbstractNode(type):
+	_abstract: set[AbstractNode] = set()
+
+	def __new__(mcs, name: str, bases: tuple[type, ...], namespace: dict[str, Any]):
+
+		# Register class as abstract if base not already abstract
+		cls = super().__new__(mcs, name, bases, namespace)
+		if not any(base in mcs._abstract for base in bases):
+			mcs._abstract.add(cls)
+	
+		return cls
+	
+	def __call__(cls,
+		*args: Any,
+		**kwargs: Any
+	):
+		
+		# Prevent instantiation if abstract
+		if cls in AbstractNode._abstract:
+			raise TypeError(f"{cls.__name__} cannot be instantiated directly")
+		return super().__call__(*args, **kwargs)
 
 class Node:
 	__descriptors__: list[BaseDescriptor] = []
 	__styles__: list[str] = []
 
-	_parent: Box | None = None
+	_root: Node
+	_parent: Parent | None = None
 	_index: int | None = None
 	_prev: Node | None = None
 	_next: Node | None = None
 
 	@property
-	def parent(self) -> Box | None:
+	def root(self) -> Node:
+		return self._root
+
+	@property
+	def parent(self) -> Parent | None:
 		return self._parent
 
 	@property
@@ -122,7 +158,7 @@ class Node:
 	positioning = PropertyDescriptor('auto', literals=NodePositioning)
 	z_index = PropertyDescriptor('auto', dimensionless=True, literals=NodeZIndex)
 
-	origin = AxialDescriptor('auto', pixels=True, squares=True, percentages=True, literals=NodePosition)
+	origin = AxialDescriptor('auto', pixels=True, squares=True, percentages=True, literals=NodeOrigin)
 	origin_x = SubDescriptor(origin, HORIZONTAL)
 	origin_y = SubDescriptor(origin, VERTICAL)
 
@@ -172,7 +208,7 @@ class Node:
 	def __init__(self, *,
 		id: str | None = None,
 		classlist: list[str] = [],
-		parent: Box | None = None,
+		parent: Parent | None = None,
 		**kwargs: str
 	) -> None:
 
@@ -180,15 +216,16 @@ class Node:
 		for descriptor in self.__descriptors__:
 			descriptor.setup(self)
 
-		# Setup intermediaries
+		# Setup properties
+		self._root = self
 		self._inner_offset = { HORIZONTAL: 0, VERTICAL: 0 }
 		self._outer_offset = { HORIZONTAL: 0, VERTICAL: 0 }
 		self._rect = { TOP: 0, RIGHT: 0, BOTTOM: 0, LEFT: 0 }
 		self._clip = { TOP: 0, RIGHT: 0, BOTTOM: 0, LEFT: 0 }
 
-		# Apply properties
 		self.id = id
 		self.classlist = classlist.copy()
+
 		self.setParent(parent)
 		self.applyStyles(**kwargs)
 
@@ -196,13 +233,172 @@ class Node:
 		return f'Node({self.origin_x.computed}, {self.origin_y.computed})' \
 			 + f' {self.width.computed}x{self.height.computed}'
 
+	# ──── Public methods
+
+	def setParent(self, parent: Parent | None) -> None:
+		if self._parent == parent:
+			return
+		if self._parent is not None:
+			self._parent.removeChild(self)
+		if parent is not None:
+			parent.addChild(self)
+
+	def applyStyles(self, **kwargs: str) -> None:
+		for key, value in kwargs.items():
+			if key not in  self.__class__.__styles__:
+				raise ValueError(f'Unknown style: {key}')
+			setattr(self, key, value)
+
+	def compute(self) -> None:
+		preorder = list(_preOrderTraversal(self))
+		postorder = list(_postOrderTraversal(self))
+
+		# Prepare compute
+		for node in preorder:
+			node._computeIntrinsic()
+			node._computeIntrinsicAxial(HORIZONTAL)
+			node._computeIntrinsicAxial(VERTICAL)
+
+		# Compute horizontal axis
+		for node in postorder:
+			node._computePreferredAxial(HORIZONTAL, self)
+
+		for node in preorder:
+			node._computeContextualAxial(HORIZONTAL, self)
+			node._computePositionAxial(HORIZONTAL, self)
+			node._computeBoundryAxial(HORIZONTAL)
+
+		# Compute vertical axis
+		for node in postorder:
+			node._computePreferredAxial(VERTICAL, self)
+
+		for node in preorder:
+			node._computeContextualAxial(VERTICAL, self)
+			node._computePositionAxial(VERTICAL, self)
+			node._computeBoundryAxial(VERTICAL)
+
+	def paint(self, canvas: Canvas) -> None:
+		rect_top = self._rect[TOP]
+		rect_right = self._rect[RIGHT]
+		rect_bottom = self._rect[BOTTOM]
+		rect_left = self._rect[LEFT]
+
+		clip_top = self._clip[TOP]
+		clip_right = self._clip[RIGHT]
+		clip_bottom = self._clip[BOTTOM]
+		clip_left = self._clip[LEFT]
+
+		# Skip if zero-size
+		if rect_right < rect_left or rect_bottom < rect_top:
+			return
+
+		# Skip if outside of clip
+		if rect_right < clip_left or rect_left > clip_right or rect_bottom < clip_top or rect_top > clip_bottom:
+			return
+
+		drawn_top = max(rect_top, clip_top)
+		drawn_right = min(rect_right, clip_right)
+		drawn_bottom = min(rect_bottom, clip_bottom)
+		drawn_left = max(rect_left, clip_left)
+
+		top_border = self.border[TOP].value
+		right_border = self.border[RIGHT].value
+		bottom_border = self.border[BOTTOM].value
+		left_border = self.border[LEFT].value
+
+		has_top = top_border != NodeBorder.NONE
+		has_right = right_border != NodeBorder.NONE
+		has_bottom = bottom_border != NodeBorder.NONE
+		has_left = left_border != NodeBorder.NONE
+
+		# Fill nodes if necissary
+		if self.mouse_events.value == NodeMouseEvents.CAPTURE:
+			canvas.setCallback(
+				self,
+				drawn_left, drawn_right,
+				drawn_top, drawn_bottom
+			)
+
+		# Check for degenerate rect shapes
+		if rect_left == rect_right:
+
+			# Single cell — collapse to a dot
+			if rect_top == rect_bottom:
+				if has_left or has_right or has_bottom or has_top:
+					canvas.setChar('·', drawn_left, drawn_top)
+
+				return
+
+			# Single column — collapse to a vertical line
+			style = left_border if has_left else right_border if has_right else NodeBorder.NONE
+			if style != NodeBorder.NONE and clip_left <= rect_left <= clip_right:
+				canvas.setVLine(_VLINE[style], drawn_left, drawn_top, drawn_bottom)
+
+			return
+
+		# Single row — collapse to a horizontal line
+		if rect_top == rect_bottom:
+			style = top_border if has_top else bottom_border if has_bottom else NodeBorder.NONE
+			if style != NodeBorder.NONE and clip_top <= rect_top <= clip_bottom:
+				canvas.setHLine(_HLINE[style], drawn_left, drawn_right, drawn_top)
+
+			return
+
+		top_visible = has_top and clip_top <= rect_top <= clip_bottom
+		right_visible = has_right and clip_left <= rect_right <= clip_right
+		bottom_visible = has_bottom and clip_top <= rect_bottom <= clip_bottom
+		left_visible = has_left and clip_left <= rect_left <= clip_right
+
+		# Draw background
+		if self.background.value == NodeBackground.OPAQUE:
+			canvas.setRect(' ', drawn_left, drawn_right,drawn_top, drawn_bottom)
+
+		# Draw sides
+		if top_visible:
+			canvas.setHLine(_HLINE[top_border], drawn_left,  drawn_right,  drawn_top)
+		if bottom_visible:
+			canvas.setHLine(_HLINE[bottom_border], drawn_left,  drawn_right, drawn_bottom)
+		if right_visible:
+			canvas.setVLine(_VLINE[right_border], drawn_right, drawn_top, drawn_bottom)
+		if left_visible:
+			canvas.setVLine(_VLINE[left_border], drawn_left,  drawn_top, drawn_bottom)
+
+		# Draw corners
+		if top_visible:
+			if left_visible:
+				canvas.setChar(_CORNERS[(TOP, LEFT)][(top_border, left_border)], drawn_left, drawn_top)
+			if right_visible:
+				canvas.setChar(_CORNERS[(TOP, RIGHT)][(top_border, right_border)], drawn_right, drawn_top)
+
+		if bottom_visible:
+			if left_visible:
+				canvas.setChar(_CORNERS[(BOTTOM, LEFT)][(bottom_border, left_border)], drawn_left, drawn_bottom)
+			if right_visible:
+				canvas.setChar(_CORNERS[(BOTTOM, RIGHT)][(bottom_border, right_border)], drawn_right, drawn_bottom)
+
+	def select(self, selector: str) -> Selection:
+		nodes = {self._root}
+		if isinstance(self._root, Parent):
+			nodes |= self._root.descendants
+
+		selection = Selection(nodes)
+		return selection.select(selector)
+
 	# ──── Compute pipeline
 
-	def _computeStaticProperties(self) -> None:
-		self._axialComputeStaticProperties(HORIZONTAL)
-		self._axialComputeStaticProperties(VERTICAL)
+	def _computeIntrinsic(self) -> None:
 
-	def _axialComputeStaticProperties(self, axis: Axis) -> None:
+		# Prepare properties
+		if self.z_index.value != NodeZIndex.AUTO:
+			self.z_index.computed = self.z_index.value
+		elif self._parent is not None:
+			self.z_index.computed = self._parent.z_index.computed
+		else:
+			self.z_index.computed = 0
+
+	def _computeIntrinsicAxial(self, axis: Axis) -> None:
+
+		# Get properties
 		first_direction = _FIRST_DIRECTION[axis]
 		last_direction = _LAST_DIRECTION[axis]
 
@@ -211,23 +407,17 @@ class Node:
 		first_padding = self.padding[first_direction]
 		last_padding = self.padding[last_direction]
 
-		# Compute static properties
-		self.origin[axis].computeStatic(axis)
-		self.translate[axis].computeStatic(axis)
+		# Prepare properties
+		self.origin[axis].prepare(axis, default=0)
+		self.translate[axis].prepare(axis, default=0)
+		self.size[axis].prepare(axis, default=0)
+		self.min_size[axis].prepare(axis, default=0)
+		self.max_size[axis].prepare(axis, default=_INFINITY)
 
-		self.size[axis].computeStatic(axis)
-		self.min_size[axis].computeStatic(axis)
-		self.max_size[axis].computeStatic(axis, _INFINITY)
-
-		first_margin.computeStatic(axis)
-		last_margin.computeStatic(axis)
-		first_padding.computeStatic(axis)
-		last_padding.computeStatic(axis)
-
-		if self._parent is None:
-			self.z_index.computeStatic(axis)
-		else:
-			self.z_index.computeStatic(axis, self._parent.z_index.computed)
+		first_margin.prepare(axis, default=0)
+		last_margin.prepare(axis, default=0)
+		first_padding.prepare(axis, default=0)
+		last_padding.prepare(axis, default=0)
 
 		# Compute intermediaries
 		self._inner_offset[axis] = first_padding.computed + last_padding.computed
@@ -237,8 +427,6 @@ class Node:
 			self._inner_offset[axis] += 1
 		if self.border[last_direction].value != NodeBorder.NONE:
 			self._inner_offset[axis] += 1
-
-	def _computePreferredSize(self, axis: Axis, root: Node) -> None:
 
 		# Compute preferred size
 		self_size = self.size[axis]
@@ -251,40 +439,34 @@ class Node:
 			self.max_size[axis].computed
 		)
 
-		# Propagate to parent if
-		#   - this is not the root
-		# 	- parent is automatically positioned
-		#   - parent is dynamic
+	def _computePreferredAxial(self, axis: Axis, root: Node) -> None:
 
-		if self == root:
+		# NOTE this code is only valid if the parent is a box. If grids eventually get implemented, this will not work
+
+		if not isinstance(self._parent, Box):
 			return
 		if self.positioning.value != NodePositioning.AUTO:
 			return
-		if self._parent is None:
-			return
+
 		parent_size = self._parent.size[axis]
 		if parent_size.value not in (NodeSize.GROW, NodeSize.FIT) and parent_size.unit != PERCENTAGE:
 			return
 
-		# NOTE this code is only valid for boxes. If grids eventually get implemented, this will not work
-		external_size = self_size.computed + self._outer_offset[axis]
+		external_size = self.size[axis].computed + self._outer_offset[axis]
 
 		# Along-axis: parent accomodates sum of child sizes
 		if _compareAxis(axis, self._parent.axis.value):
 			parent_size.computed += external_size
 
-		# Across-axis: parent expands to accomodate widest child
+		# Across-axis: parent expands to accomodate largest child
 		elif parent_size.computed < external_size:
 			parent_size.computed = external_size
 
-	def _computeRelativeChildren(self, axis: Axis, root: Node) -> None:
+	def _computeContextualAxial(self, axis: Axis, root: Node) -> None:
 		pass
 
-	def _computeDynamicChildren(self, axis: Axis) -> None:
-		pass
-
-	def _computeManualPosition(self, axis: Axis) -> None:
-		if self._parent is None or self.positioning.value == NodePositioning.AUTO:
+	def _computePositionAxial(self, axis: Axis, root: Node) -> None:
+		if self.positioning.value == NodePositioning.AUTO:
 			return
 
 		# Translate origin
@@ -293,12 +475,12 @@ class Node:
 
 		# Offset origin if relative
 		if self.positioning.value == NodePositioning.RELATIVE:
+			assert self._parent is not None
 			self_origin.computed += self._parent.origin[axis].computed
 
-	def _computeAutoPosition(self, axis: Axis) -> None:
-		pass
+	def _computeBoundryAxial(self, axis: Axis) -> None:
 
-	def _computeBoundries(self, axis: Axis) -> None:
+		# Get properties
 		first_direction = _FIRST_DIRECTION[axis]
 		last_direction = _LAST_DIRECTION[axis]
 		self_origin = self.origin[axis]
@@ -320,182 +502,7 @@ class Node:
 		self._clip[first_direction] = self_rect_first
 		self._clip[last_direction] = self_rect_last
 
-	def setParent(self, parent: Box | None) -> None:
-		if self._parent == parent:
-			return
-		if self._parent is not None:
-			self._parent.removeChild(self)
-		self._parent = parent
-		if self._parent is not None:
-			self._parent.addChild(self)
-
-	def applyStyles(self, **kwargs: str) -> None:
-		for key, value in kwargs.items():
-			if key not in  self.__class__.__styles__:
-				raise ValueError(f'Unknown style: {key}')
-			setattr(self, key, value)
-
-	def compute(self) -> None:
-		preorder = list(_preOrderTraversal(self))
-		postorder = list(_postOrderTraversal(self))
-
-		# Compute static
-		for node in preorder:
-			node._computeStaticProperties()
-
-		# Compute horizontal axis
-		for node in postorder:
-			node._computePreferredSize(HORIZONTAL, self)
-
-		for node in preorder:
-			node._computeRelativeChildren(HORIZONTAL, self)
-			node._computeDynamicChildren(HORIZONTAL)
-
-		# Compute vertical axis
-		for node in postorder:
-			node._computePreferredSize(VERTICAL, self)
-
-		for node in preorder:
-			node._computeRelativeChildren(VERTICAL, self)
-			node._computeDynamicChildren(VERTICAL)
-
-		# Compute position
-		for node in preorder:
-			node._computeManualPosition(HORIZONTAL)
-			node._computeAutoPosition(HORIZONTAL)
-			node._computeBoundries(HORIZONTAL)
-
-			node._computeManualPosition(VERTICAL)
-			node._computeAutoPosition(VERTICAL)
-			node._computeBoundries(VERTICAL)
-
-	def paint(self, canvas: Canvas) -> bool:
-		if self.visibility.value != NodeVisibility.SHOW:
-			return False
-
-		rect_top = self._rect[TOP]
-		rect_right = self._rect[RIGHT]
-		rect_bottom = self._rect[BOTTOM]
-		rect_left = self._rect[LEFT]
-
-		clip_top = self._clip[TOP]
-		clip_right = self._clip[RIGHT]
-		clip_bottom = self._clip[BOTTOM]
-		clip_left = self._clip[LEFT]
-
-		# Skip if zero-size or entirely outside clip
-		if rect_right < rect_left or rect_bottom < rect_top:
-			return True
-		if rect_right < clip_left or rect_left > clip_right or rect_bottom < clip_top or rect_top > clip_bottom:
-			return True
-
-		drawn_top = max(rect_top, clip_top)
-		drawn_right = min(rect_right, clip_right)
-		drawn_bottom = min(rect_bottom, clip_bottom)
-		drawn_left = max(rect_left, clip_left)
-
-		top_border = self.border[TOP].value
-		right_border = self.border[RIGHT].value
-		bottom_border = self.border[BOTTOM].value
-		left_border = self.border[LEFT].value
-
-		has_top = top_border != NodeBorder.NONE
-		has_right = right_border != NodeBorder.NONE
-		has_bottom = bottom_border != NodeBorder.NONE
-		has_left = left_border != NodeBorder.NONE
-
-		z = self.z_index.computed
-
-		# Fill nodes if necissary
-		if self.mouse_events.value == NodeMouseEvents.CAPTURE:
-			canvas.fillNodes(
-				self,
-				drawn_left, drawn_right,
-				drawn_top, drawn_bottom,
-				z
-			)
-
-		# Check for degenerate rect shapes
-		if rect_left == rect_right:
-
-			# Single cell — collapse to a dot
-			if rect_top == rect_bottom:
-				if has_left or has_right or has_bottom or has_top:
-					canvas.drawChar('·', drawn_left, drawn_top, z)
-
-				return True
-
-			# Single column — collapse to a vertical line
-			style = left_border if has_left else right_border if has_right else NodeBorder.NONE
-			if style != NodeBorder.NONE and clip_left <= rect_left <= clip_right:
-				canvas.drawVLine(_VLINE[style], drawn_left, drawn_top, drawn_bottom, z)
-
-			return True
-
-		# Single row — collapse to a horizontal line
-		if rect_top == rect_bottom:
-			style = top_border if has_top else bottom_border if has_bottom else NodeBorder.NONE
-			if style != NodeBorder.NONE and clip_top <= rect_top <= clip_bottom:
-				canvas.drawHLine(_HLINE[style], drawn_left, drawn_right, drawn_top, z)
-
-			return True
-
-		top_visible = has_top and clip_top <= rect_top <= clip_bottom
-		right_visible = has_right and clip_left <= rect_right <= clip_right
-		bottom_visible = has_bottom and clip_top <= rect_bottom <= clip_bottom
-		left_visible = has_left and clip_left <= rect_left <= clip_right
-
-		# Draw background if necissary
-		if self.background.value == NodeBackground.OPAQUE:
-			canvas.drawRect(
-				' ',
-				drawn_left, drawn_right,
-				drawn_top, drawn_bottom,
-				z
-			)
-
-		# Draw sides
-		if top_visible:
-			canvas.drawHLine(_HLINE[top_border], drawn_left,  drawn_right,  drawn_top, z)
-		if bottom_visible:
-			canvas.drawHLine(_HLINE[bottom_border], drawn_left,  drawn_right, drawn_bottom, z)
-		if right_visible:
-			canvas.drawVLine(_VLINE[right_border], drawn_right, drawn_top, drawn_bottom, z)
-		if left_visible:
-			canvas.drawVLine(_VLINE[left_border], drawn_left,  drawn_top, drawn_bottom, z)
-
-		# Draw corners
-		if top_visible:
-			if left_visible:
-				canvas.drawChar(
-					_CORNERS[(TOP, LEFT)][(top_border, left_border)],
-					drawn_left, drawn_top, z
-				)
-
-			if right_visible:
-				canvas.drawChar(
-					_CORNERS[(TOP, RIGHT)][(top_border, right_border)],
-					drawn_right, drawn_top, z
-				)
-
-		if bottom_visible:
-			if left_visible:
-				canvas.drawChar(
-					_CORNERS[(BOTTOM, LEFT)][(bottom_border, left_border)],
-					drawn_left,  drawn_bottom, z
-				)
-
-			if right_visible:
-				canvas.drawChar(
-					_CORNERS[(BOTTOM, RIGHT)][(bottom_border, right_border)],
-					drawn_right, drawn_bottom, z
-				)
-
-		return True
-
-# ─────────────────────────────────── Box ───────────────────────────────────
-
-class Box(Node):
+class Parent(Node, metaclass=AbstractNode):
 	_children: list[Node]
 	_descendants: set[Node]
 	_filtered_children: list[Node]
@@ -509,19 +516,10 @@ class Box(Node):
 	def descendants(self) -> set[Node]:
 		return self._descendants.copy()
 
-	# ──── Styles
-
-	axis = PropertyDescriptor('vertical', literals=BoxAxis)
-	child_gap = PropertyDescriptor('0px', pixels=True, squares=True, literals=BoxChildGap)
-	
-	place_children = RelativeAxialDescriptor('start', literals=BoxPlaceChildren)
-	place_children_along = SubDescriptor(place_children, ALONG)
-	place_children_across = SubDescriptor(place_children, ACROSS)
-
 	def __init__(self, *,
 		id: str | None = None,
 		classlist: list[str] = [],
-		parent: Box | None = None,
+		parent: Parent | None = None,
 		children: list[Node] = [],
 		**kwargs: str
 	) -> None:
@@ -547,56 +545,120 @@ class Box(Node):
 			result += '\n\t' + '\n\t'.join(child.__repr__().splitlines())
 		return result
 
+	# ──── Public methods
+
+	def addChild(self, child: Node) -> None:
+		if child in self._children:
+			return
+		if child is self or isinstance(child, Parent) and self in child._descendants:
+			raise ValueError('Cannot add an ancestor as a child (cyclic hierarchy)')
+
+		# Update root
+		child._root = self._root
+		if isinstance(child, Parent):
+			for descendent in child._descendants:
+				descendent._root = self._root
+
+		# Update child properties
+		child._index = len(self._children)
+		if child._index > 0:
+			prev = self._children[-1]
+			prev._next = child
+			child._prev = prev
+
+		# Update parent properties
+		if child._parent is not None:
+			child._parent.removeChild(child)
+
+		child._parent = self
+		self._children.append(child)
+
+		# Update descendants
+		node = self
+		while node is not None:
+			node._descendants.add(child)
+			if isinstance(child, Box):
+				node._descendants.update(child._descendants)
+			node = node._parent
+
+	def removeChild(self, child: Node) -> None:
+		if child not in self._children:
+			return
+		
+		# Update root
+		child._root = child
+		if isinstance(child, Parent):
+			for descendent in child._descendants:
+				descendent._root = child
+
+		# Update sibling index
+		node = child._next
+		while node:
+			assert node._index is not None
+			node._index -= 1
+			node = node._next
+
+		# Update sibling prev/next
+		if child._prev:
+			child._prev._next = child._next
+		if child._next:
+			child._next._prev = child._prev
+
+		# Update child properties
+		child._parent = None
+		child._index = None
+		child._prev = None
+		child._next = None
+
+		# Update descendants
+		node = self
+		while node:
+			node._descendants.discard(child)
+			if isinstance(child, Box):
+				node._descendants.difference_update(child._descendants)
+			node = node._parent
+
 	# ──── Compute pipeline
 
-	def _computeStaticProperties(self) -> None:
-		super()._computeStaticProperties()
+	def _computeIntrinsic(self) -> None:
+		super()._computeIntrinsic()
 
-		# Compute static properties
-		self.child_gap.computeStatic(self.axis.value)
-
-		# Sort children
+		# Compute intermediaries
 		self._filtered_children = []
 		self._automatic_children = []
 
 		for child in self._children:
 			if child.visibility.value == NodeVisibility.NONE:
 				continue
+
 			self._filtered_children.append(child)
 			if child.positioning.value == NodePositioning.AUTO:
 				self._automatic_children.append(child)
 
-	def _computePreferredSize(self, axis: Axis, root: Node) -> None:
+	def _computeContextualAxial(self, axis: Axis, root: Node) -> None:
+		super()._computeContextualAxial(axis, root)
 
-		# Compute preferred size
-		if _compareAxis(axis, self.axis.value):
-			self_size = self.size[axis]
-			if self_size.value in (NodeSize.GROW, NodeSize.FIT) or self_size.unit == PERCENTAGE:
-				if (gaps := len(self._automatic_children) - 1) > 0:
-					self_size.computed += self.child_gap.computed * gaps
-
-		super()._computePreferredSize(axis, root)
-
-	def _computeRelativeChildren(self, axis: Axis, root: Node) -> None:
-		super()._computeRelativeChildren(axis, root)
-
+		# Get properties
 		self_size = self.size[axis]
+
+		# Relative properties
 		for child in self._filtered_children:
+
+			# Get properties
+			child_origin = child.origin[axis]
+			child_translate = child.translate[axis]
+			child_size = child.size[axis]
 			child_min_size = child.min_size[axis]
 			child_max_size = child.max_size[axis]
 
 			# Relative size
-			child_size = child.size[axis]
 			if child_size.unit == PERCENTAGE:
 				child_size.computed = int(self_size.computed * child_size.value / 100)
-
-			# Relative limits
 			if child_min_size.unit == PERCENTAGE:
 				child_min_size.computed = int(self_size.computed * child_min_size.value / 100)
 			if child_max_size.unit == PERCENTAGE:
 				child_max_size.computed = int(self_size.computed * child_max_size.value / 100)
 
-			# Final clamp
 			child_size.clamp(
 				child_min_size.computed,
 				child_max_size.computed
@@ -606,20 +668,43 @@ class Box(Node):
 			reference = self_size.computed
 			if child.positioning.value == NodePositioning.ABSOLUTE:
 				reference = root.size[axis].computed
-
-			child_origin = child.origin[axis]
 			if child_origin.unit == PERCENTAGE:
 				child_origin.computed = int(reference * child_origin.value / 100)
 
 			# Relative translation
-			child_translate = child.translate[axis]
 			if child_translate.unit == PERCENTAGE:
 				child_translate.computed = int(child_size.computed * child_translate.value / 100)
 
-	def _computeDynamicChildren(self, axis: Axis) -> None:
-		super()._computeDynamicChildren(axis)
+class Box(Parent):
 
-		# Flood children along axis
+	# ──── Styles
+
+	axis = PropertyDescriptor('vertical', literals=BoxAxis)
+	child_gap = PropertyDescriptor('0px', pixels=True, squares=True, literals=BoxChildGap)
+
+	place_children = RelativeAxialDescriptor('start', literals=BoxPlaceChildren)
+	place_children_along = SubDescriptor(place_children, ALONG)
+	place_children_across = SubDescriptor(place_children, ACROSS)
+
+	# ──── Compute pipeline
+
+	def _computeIntrinsic(self) -> None:
+		super()._computeIntrinsic()
+
+		# Prepare properties
+		self.child_gap.prepare(self.axis.value, default=0)
+
+		# Compute preferred size
+		if self.child_gap.value != BoxChildGap.AUTO:
+			self_size = self.size[_BOX_AXIS[self.axis.value]]
+			if self_size.value in (NodeSize.GROW, NodeSize.FIT) or self_size.unit == PERCENTAGE:
+				if (gaps := len(self._automatic_children) - 1) > 0:
+					self_size.computed += self.child_gap.computed * gaps
+
+	def _computeContextualAxial(self, axis: Axis, root: Node) -> None:
+		super()._computeContextualAxial(axis, root)
+
+		# Dynamic properties
 		if _compareAxis(axis, self.axis.value):
 			remaining = self._floodChildren(axis)
 
@@ -628,10 +713,9 @@ class Box(Node):
 				if (gaps := len(self._automatic_children) - 1) > 0:
 					self.child_gap.computed = int(remaining / gaps)
 
-			return
-
 		# Clamp children across axis
-		self._clampChildren(axis)
+		else:
+			self._clampChildren(axis)
 
 	def _floodChildren(self, axis: Axis) -> int:
 
@@ -645,85 +729,98 @@ class Box(Node):
 		if delta == 0:
 			return 0
 
+		sign = 1 if delta > 0 else -1
+		delta *= sign
+
 		# Find eligible children
-		eligible: list[Node] = [
+		eligible = [
 			child for child in self._automatic_children
-			if child.size[axis].value == NodeSize.FIT and delta < 0
+			if child.size[axis].value == NodeSize.FIT and sign < 0
 			or child.size[axis].value == NodeSize.GROW
 		]
 
 		if not eligible:
 			return delta
 
-		sign = 1 if delta > 0 else -1
-		delta *= sign
-
 		# Sort smallest-first when growing, largest-first when shrinking
 		eligible.sort(key=lambda node: sign * node.size[axis].computed)
 
-		# Bulk flood fill algorithm
+		# Bulk flood algorithm
 		while delta > 0:
-			reference = None
-			step = _INFINITY
-			n = 0
+			reference = None	# Size of nodes in group
+			step = _INFINITY	# Size of next step
+			group = 0			# Size of group
 
 			# Collect group
-			while n < len(eligible):
-				child = eligible[n]
+			while group < len(eligible):
+
+				# Get properties
+				child = eligible[group]
 				child_size = child.size[axis]
-				headroom = (child.max_size[axis].computed - child_size.computed)	\
-						   if sign > 0 else											\
-						   (child_size.computed - child.min_size[axis].computed)
+				child_min = child.min_size[axis]
+				child_max = child.max_size[axis]
 
-				if headroom <= 0:
-					eligible.pop(n)
-					continue # Not necissary to incr n
-
+				# When node is different from group, stop collecting group
 				if reference is None:
 					reference = sign * child_size.computed
 
 				else:
 					difference = sign * child_size.computed - reference
 					if difference > 0:
-
-						# Step limit 1 - node after group
 						if difference < step:
-							step = difference
+							step = difference # Step limit 1 - Step cant exceed node after group
 						break
 
-				# Step limit 2 - smallest headroom
+				# If child has no room to resize, its no longer eligible
+				headroom = (child_max.computed - child_size.computed)	\
+						   if sign > 0 else								\
+						   (child_size.computed - child_min.computed)
+
+				if headroom <= 0:
+					eligible.pop(group)
+					continue
+
 				if headroom < step:
-					step = headroom
+					step = headroom # Step limit 2 - Step cant exceed smallest headroom amongst group
 
-				n += 1
+				# Increase group size
+				group += 1
 
-			if reference is None:
-				break # All nodes are at their limit
+			# If group size is 0, all nodes are at their limit
+			if group == 0:
+				break
 
-			# Step limit 3 - remaining spread over group
-			remaining = delta // n
+			# If delta < group size, distribute remaining delta
+			if delta < group:
+				for child in eligible[:delta]:
+					child.size[axis].computed += sign
+				delta = 0
+				break
+
+			# Step limit 3 - Cumulative step cannot exceed delta
+			remaining = delta // group
 			if remaining < step:
 				step = remaining
 
 			# Apply step
-			if step == 0:
-				for child in eligible[:delta]:
-					child.size[axis].computed += sign
-				break
-
-			for child in eligible[:n]:
+			for child in eligible[:group]:
 				child.size[axis].computed += sign * step
-			delta -= n * step
+			delta -= group * step
 
 		return sign * delta
 
 	def _clampChildren(self, axis: Axis) -> None:
+
+		# Get properties
 		self_inner_size = self.size[axis].computed - self._inner_offset[axis]
 
 		for child in self._automatic_children:
+
+			# Get properties
 			child_outer_offset = child._outer_offset[axis]
 			child_size = child.size[axis]
 
+			# Clamp child
 			if child_size.value == NodeSize.GROW or (
 				child_size.value == NodeSize.FIT and
 				child_size.computed + child_outer_offset > self_inner_size
@@ -734,16 +831,23 @@ class Box(Node):
 					self_inner_size - child_outer_offset
 				)
 
-	def _computeAutoPosition(self, axis: Axis):
-		super()._computeAutoPosition(axis)
+	def _computePositionAxial(self, axis: Axis, root: Node) -> None:
+		super()._computePositionAxial(axis, root)
 
-		if _compareAxis(axis, self.axis.value):
-			self._computeAutoPositionAlong(axis)
+		if self.positioning.value != NodePositioning.AUTO:
 			return
 
-		self._computeAutoPositionAcross(axis)
+		# Position children along box axis
+		if _compareAxis(axis, self.axis.value):
+			self._computePositionAlong(axis)
 
-	def _computeAutoPositionAlong(self, axis: Axis):
+		# Position children across box axis
+		else:
+			self._computePositionAcross(axis)
+
+	def _computePositionAlong(self, axis: Axis):
+
+		# Get properties
 		first_direction = _FIRST_DIRECTION[axis]
 		place_children_along = self.place_children[ALONG].value
 
@@ -753,15 +857,18 @@ class Box(Node):
 			offset += 1
 
 		# Resolve child alignment
-		if place_children_along != BoxPlaceChildren.START:
+		if place_children_along != BoxPlaceChildren.START and self.child_gap.value != BoxChildGap.AUTO:
+
+			# Get remaining space
 			remaining = self.size[axis].computed - self._inner_offset[axis]
 			if (gaps := len(self._automatic_children) - 1) > 0:
 				remaining -= self.child_gap.computed * gaps
 			for child in self._automatic_children:
 				remaining -= child.size[axis].computed + child._outer_offset[axis]
 
+			# Set offset
 			if place_children_along == BoxPlaceChildren.CENTER:
-				offset += int(remaining / 2)
+				offset += remaining // 2
 			else:
 				offset += remaining
 
@@ -775,7 +882,9 @@ class Box(Node):
 
 			offset += child.size[axis].computed + child._outer_offset[axis] + self.child_gap.computed
 
-	def _computeAutoPositionAcross(self, axis: Axis):
+	def _computePositionAcross(self, axis: Axis):
+
+		# Get properties
 		first_direction = _FIRST_DIRECTION[axis]
 		place_children_across = self.place_children[ACROSS].value
 
@@ -802,69 +911,4 @@ class Box(Node):
 				elif place_children_across == BoxPlaceChildren.END:
 					child_origin.computed += remaining
 
-	def addChild(self, child: Node) -> None:
-		if child in self._children:
-			return
-		if child is self or isinstance(child, Box) and self in child._descendants:
-			raise ValueError('Cannot add an ancestor as a child (cyclic hierarchy)')
 
-		# Update child properties
-		child._index = len(self._children)
-		if child._index > 0:
-			prev = self._children[-1]
-			prev._next = child
-			child._prev = prev
-
-		# Update parent properties
-		if child._parent is not None:
-			child._parent.removeChild(child)
-
-		child._parent = self
-		self._children.append(child)
-
-		# Update descendants
-		node = self
-		while node is not None:
-			node._descendants.add(child)
-			if isinstance(child, Box):
-				node._descendants |= child._descendants
-			node = node._parent
-
-	def removeChild(self, child: Node) -> None:
-		if child not in self._children:
-			return
-
-		# Update sibling index
-		node = child._next
-		while node:
-			assert node._index is not None
-			node._index -= 1
-			node = node._next
-
-		# Update sibling prev/next
-		if child._prev:
-			child._prev._next = child._next
-		if child._next:
-			child._next._prev = child._prev
-
-		# Update child properties
-		child._parent = None
-		child._index = None
-		child._prev = None
-		child._next = None
-
-		# Update descendants
-		node = self
-		while node:
-			node._descendants.discard(child)
-			if isinstance(child, Box):
-				node._descendants -= child._descendants
-			node = node._parent
-
-	def paint(self, canvas: Canvas) -> bool:
-		if not super().paint(canvas):
-			return False
-
-		for child in self._children:
-			child.paint(canvas)
-		return True

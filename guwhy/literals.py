@@ -15,9 +15,9 @@ class NodePositioning(Enum):
 	ABSOLUTE = 'absolute'
 
 class NodeZIndex(Enum):
-	Auto = 'auto'
+	AUTO = 'auto'
 
-class NodePosition(Enum):
+class NodeOrigin(Enum):
 	AUTO = 'auto'
 
 class NodeSize(Enum):
