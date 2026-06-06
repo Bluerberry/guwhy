@@ -13,18 +13,14 @@ if TYPE_CHECKING:
 
 # ─────────────────────────────────── Maps & constants ───────────────────────────────────
 
-# Constants
 _INFINITY = float('inf')
 
-# Maps axis → directions
 _FIRST_DIRECTION: tuple[Direction, ...] = (LEFT, TOP)
 _LAST_DIRECTION: tuple[Direction, ...] = (RIGHT, BOTTOM)
 
-# Maps border style → line symbols
 _HLINE = { NodeBorder.SINGLE: '─', NodeBorder.DOUBLE: '═' }
 _VLINE = { NodeBorder.SINGLE: '│', NodeBorder.DOUBLE: '║' }
 
-# Maps (h_side, v_side) → (h_style, v_style) → corner symbols
 _CORNERS: dict[
 	tuple[Direction, Direction],
 	dict[tuple[NodeBorder, NodeBorder], str]
@@ -107,15 +103,10 @@ class Node:
 	__descriptors__: list[BaseDescriptor] = []
 	__styles__: list[str] = []
 
-	_root: Node
 	_parent: Parent | None = None
 	_index: int | None = None
 	_prev: Node | None = None
 	_next: Node | None = None
-
-	@property
-	def root(self) -> Node:
-		return self._root
 
 	@property
 	def parent(self) -> Parent | None:
@@ -208,7 +199,6 @@ class Node:
 			descriptor.setup(self)
 
 		# Setup properties
-		self._root = self
 		self._inner_offset = { HORIZONTAL: 0, VERTICAL: 0 }
 		self._outer_offset = { HORIZONTAL: 0, VERTICAL: 0 }
 		self._rect = { TOP: 0, RIGHT: 0, BOTTOM: 0, LEFT: 0 }
@@ -218,7 +208,7 @@ class Node:
 		self.classlist = classlist.copy()
 
 		self.setParent(parent)
-		self.applyStyles(**kwargs)
+		self.apply(**kwargs)
 
 	def __repr__(self) -> str:
 		return f'Node({self.origin_x.computed}, {self.origin_y.computed})' \
@@ -234,7 +224,7 @@ class Node:
 		if parent is not None:
 			parent.addChild(self)
 
-	def applyStyles(self, **kwargs: str) -> None:
+	def apply(self, **kwargs: str) -> None:
 		for key, value in kwargs.items():
 			if key not in  self.__class__.__styles__:
 				raise ValueError(f'Unknown style: {key}')
@@ -366,16 +356,6 @@ class Node:
 				canvas.setChar(_CORNERS[(BOTTOM, LEFT)][(bottom_border, left_border)], drawn_left, drawn_bottom)
 			if right_visible:
 				canvas.setChar(_CORNERS[(BOTTOM, RIGHT)][(bottom_border, right_border)], drawn_right, drawn_bottom)
-
-	def select(self, selector: str):
-		from .selection import Selection
-
-		nodes = {self._root}
-		if isinstance(self._root, Parent):
-			nodes |= self._root.descendants
-
-		selection = Selection(nodes)
-		return selection.select(selector)
 
 	# ──── Compute pipeline
 
@@ -546,12 +526,6 @@ class Parent(Node, metaclass=AbstractNode):
 		if child is self or isinstance(child, Parent) and self in child._descendants:
 			raise ValueError('Cannot add an ancestor as a child (cyclic hierarchy)')
 
-		# Update root
-		child._root = self._root
-		if isinstance(child, Parent):
-			for descendent in child._descendants:
-				descendent._root = self._root
-
 		# Update child properties
 		child._index = len(self._children)
 		if child._index > 0:
@@ -578,12 +552,6 @@ class Parent(Node, metaclass=AbstractNode):
 		if child not in self._children:
 			return
 		
-		# Update root
-		child._root = child
-		if isinstance(child, Parent):
-			for descendent in child._descendants:
-				descendent._root = child
-
 		# Update sibling index
 		node = child._next
 		while node:
@@ -908,5 +876,3 @@ class Box(Parent):
 					child_origin.computed += int(remaining / 2)
 				elif place_children_across == BoxPlaceChildren.END:
 					child_origin.computed += remaining
-
-

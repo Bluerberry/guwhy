@@ -4,7 +4,8 @@ import pstats
 import io
 import math
 
-from guwhy.layout import Box
+from guwhy.layout import Node, Box
+from guwhy.selection import Selection
 
 # ─────────────────────── scene ───────────────────────
 
@@ -54,12 +55,11 @@ def build():
                     place_children="center",
                     padding="1px",
                     children = [
-                        Box(
+                        Node(
                             size="75% 75%", 
-                            border="single" if c % 2 == 0 else "none",
-                            place_children="center"
+                            border="single" if c % 2 == 0 else "none"
                         ),
-                        Box(
+                        Node(
                             z_index='3', 
                             size="2sq", 
                             positioning="relative", 
@@ -77,14 +77,12 @@ def build():
 
 root = build()
 root.compute()
-selection = root.select('box box:odd + *')
-print(len(selection.selection))
 
 pr = cProfile.Profile()
 
 for _ in range(1000):
     pr.enable()
-    root.select('box box:odd + *')
+    Selection.using(root, 'box box:odd + *')
     pr.disable()
 
 s = io.StringIO()
