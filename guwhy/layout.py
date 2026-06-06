@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Generator
 # Internal libraries
 from .properties import *
 from .literals import *
+from .errors import *
 
 if TYPE_CHECKING:
 	from .canvas import Canvas
@@ -18,36 +19,99 @@ _INFINITY = float('inf')
 _FIRST_DIRECTION: tuple[Direction, ...] = (LEFT, TOP)
 _LAST_DIRECTION: tuple[Direction, ...] = (RIGHT, BOTTOM)
 
-_HLINE = { NodeBorder.SINGLE: '─', NodeBorder.DOUBLE: '═' }
-_VLINE = { NodeBorder.SINGLE: '│', NodeBorder.DOUBLE: '║' }
+_HLINE = {
+	NodeBorders.SINGLE: '─',
+	NodeBorders.DOUBLE: '═',
+	NodeBorders.BOLD: '━'
+}
 
-_CORNERS: dict[
-	tuple[Direction, Direction],
-	dict[tuple[NodeBorder, NodeBorder], str]
-] = {
-	(TOP, LEFT): {
-		(NodeBorder.SINGLE, NodeBorder.SINGLE): '┌',
-		(NodeBorder.DOUBLE, NodeBorder.DOUBLE): '╔',
-		(NodeBorder.SINGLE, NodeBorder.DOUBLE): '╓',
-		(NodeBorder.DOUBLE, NodeBorder.SINGLE): '╒'
+_VLINE = {
+	NodeBorders.SINGLE: '│',
+	NodeBorders.DOUBLE: '║',
+	NodeBorders.BOLD: '┃'
+}
+
+_CORNERS = {
+	TOP_LEFT: {
+		(NodeCorners.SHARP, NodeBorders.SINGLE, NodeBorders.SINGLE): '┌',
+		(NodeCorners.SHARP, NodeBorders.DOUBLE, NodeBorders.DOUBLE): '╔',
+		(NodeCorners.SHARP, NodeBorders.BOLD,   NodeBorders.BOLD):   '┏',
+		(NodeCorners.SHARP, NodeBorders.DOUBLE, NodeBorders.SINGLE): '╒',
+		(NodeCorners.SHARP, NodeBorders.SINGLE, NodeBorders.DOUBLE): '╓',
+		(NodeCorners.SHARP, NodeBorders.BOLD,   NodeBorders.SINGLE): '┍',
+		(NodeCorners.SHARP, NodeBorders.SINGLE, NodeBorders.BOLD):   '┎',
+		(NodeCorners.SHARP, NodeBorders.DOUBLE, NodeBorders.BOLD):   '�',
+		(NodeCorners.SHARP, NodeBorders.BOLD,   NodeBorders.DOUBLE): '�',
+		(NodeCorners.ROUND, NodeBorders.SINGLE, NodeBorders.SINGLE): '╭',
+		(NodeCorners.ROUND, NodeBorders.DOUBLE, NodeBorders.DOUBLE): '�',
+		(NodeCorners.ROUND, NodeBorders.BOLD,   NodeBorders.BOLD):   '�',
+		(NodeCorners.ROUND, NodeBorders.DOUBLE, NodeBorders.SINGLE): '�',
+		(NodeCorners.ROUND, NodeBorders.SINGLE, NodeBorders.DOUBLE): '�',
+		(NodeCorners.ROUND, NodeBorders.BOLD,   NodeBorders.SINGLE): '�',
+		(NodeCorners.ROUND, NodeBorders.SINGLE, NodeBorders.BOLD):   '�',
+		(NodeCorners.ROUND, NodeBorders.DOUBLE, NodeBorders.BOLD):   '�',
+		(NodeCorners.ROUND, NodeBorders.BOLD,   NodeBorders.DOUBLE): '�'
+
 	},
-	(TOP, RIGHT): {
-		(NodeBorder.SINGLE, NodeBorder.SINGLE): '┐',
-		(NodeBorder.DOUBLE, NodeBorder.DOUBLE): '╗',
-		(NodeBorder.SINGLE, NodeBorder.DOUBLE): '╖',
-		(NodeBorder.DOUBLE, NodeBorder.SINGLE): '╕'
+	TOP_RIGHT: {
+		(NodeCorners.SHARP, NodeBorders.SINGLE, NodeBorders.SINGLE): '┐',
+		(NodeCorners.SHARP, NodeBorders.DOUBLE, NodeBorders.DOUBLE): '╗',
+		(NodeCorners.SHARP, NodeBorders.BOLD,   NodeBorders.BOLD):   '┓',
+		(NodeCorners.SHARP, NodeBorders.DOUBLE, NodeBorders.SINGLE): '╕',
+		(NodeCorners.SHARP, NodeBorders.SINGLE, NodeBorders.DOUBLE): '╖',
+		(NodeCorners.SHARP, NodeBorders.BOLD,   NodeBorders.SINGLE): '┑',
+		(NodeCorners.SHARP, NodeBorders.SINGLE, NodeBorders.BOLD):   '┒',
+		(NodeCorners.SHARP, NodeBorders.DOUBLE, NodeBorders.BOLD):   '�',
+		(NodeCorners.SHARP, NodeBorders.BOLD,   NodeBorders.DOUBLE): '�',
+		(NodeCorners.ROUND, NodeBorders.SINGLE, NodeBorders.DOUBLE): '�',
+		(NodeCorners.ROUND, NodeBorders.SINGLE, NodeBorders.SINGLE): '╮',
+		(NodeCorners.ROUND, NodeBorders.BOLD,   NodeBorders.BOLD):   '�',
+		(NodeCorners.ROUND, NodeBorders.DOUBLE, NodeBorders.SINGLE): '�',
+		(NodeCorners.ROUND, NodeBorders.DOUBLE, NodeBorders.DOUBLE): '�',
+		(NodeCorners.ROUND, NodeBorders.BOLD,   NodeBorders.SINGLE): '�',
+		(NodeCorners.ROUND, NodeBorders.SINGLE, NodeBorders.BOLD):   '�',
+		(NodeCorners.ROUND, NodeBorders.DOUBLE, NodeBorders.BOLD):   '�',
+		(NodeCorners.ROUND, NodeBorders.BOLD,   NodeBorders.DOUBLE): '�'
 	},
-	(BOTTOM, LEFT): {
-		(NodeBorder.SINGLE, NodeBorder.SINGLE): '└',
-		(NodeBorder.DOUBLE, NodeBorder.DOUBLE): '╚',
-		(NodeBorder.SINGLE, NodeBorder.DOUBLE): '╙',
-		(NodeBorder.DOUBLE, NodeBorder.SINGLE): '╘'
+	BOTTOM_LEFT: {
+		(NodeCorners.SHARP, NodeBorders.SINGLE, NodeBorders.SINGLE): '└',
+		(NodeCorners.SHARP, NodeBorders.DOUBLE, NodeBorders.DOUBLE): '╚',
+		(NodeCorners.SHARP, NodeBorders.BOLD,   NodeBorders.BOLD):   '┗',
+		(NodeCorners.SHARP, NodeBorders.DOUBLE, NodeBorders.SINGLE): '╘',
+		(NodeCorners.SHARP, NodeBorders.SINGLE, NodeBorders.DOUBLE): '╙',
+		(NodeCorners.SHARP, NodeBorders.BOLD,   NodeBorders.SINGLE): '┕',
+		(NodeCorners.SHARP, NodeBorders.SINGLE, NodeBorders.BOLD):   '┖',
+		(NodeCorners.SHARP, NodeBorders.DOUBLE, NodeBorders.BOLD):   '�',
+		(NodeCorners.SHARP, NodeBorders.BOLD,   NodeBorders.DOUBLE): '�',
+		(NodeCorners.ROUND, NodeBorders.SINGLE, NodeBorders.SINGLE): '╰',
+		(NodeCorners.ROUND, NodeBorders.DOUBLE, NodeBorders.DOUBLE): '�',
+		(NodeCorners.ROUND, NodeBorders.BOLD,   NodeBorders.BOLD):   '�',
+		(NodeCorners.ROUND, NodeBorders.DOUBLE, NodeBorders.SINGLE): '�',
+		(NodeCorners.ROUND, NodeBorders.SINGLE, NodeBorders.DOUBLE): '�',
+		(NodeCorners.ROUND, NodeBorders.BOLD,   NodeBorders.SINGLE): '�',
+		(NodeCorners.ROUND, NodeBorders.SINGLE, NodeBorders.BOLD):   '�',
+		(NodeCorners.ROUND, NodeBorders.DOUBLE, NodeBorders.BOLD):   '�',
+		(NodeCorners.ROUND, NodeBorders.BOLD,   NodeBorders.DOUBLE): '�'
 	},
-	(BOTTOM, RIGHT): {
-		(NodeBorder.SINGLE, NodeBorder.SINGLE): '┘',
-		(NodeBorder.DOUBLE, NodeBorder.DOUBLE): '╝',
-		(NodeBorder.SINGLE, NodeBorder.DOUBLE): '╜',
-		(NodeBorder.DOUBLE, NodeBorder.SINGLE): '╛'
+	BOTTOM_RIGHT: {
+		(NodeCorners.SHARP, NodeBorders.SINGLE, NodeBorders.SINGLE): '┘',
+		(NodeCorners.SHARP, NodeBorders.DOUBLE, NodeBorders.DOUBLE): '╝',
+		(NodeCorners.SHARP, NodeBorders.BOLD,   NodeBorders.BOLD):   '┛',
+		(NodeCorners.SHARP, NodeBorders.DOUBLE, NodeBorders.SINGLE): '╛',
+		(NodeCorners.SHARP, NodeBorders.SINGLE, NodeBorders.DOUBLE): '╜',
+		(NodeCorners.SHARP, NodeBorders.BOLD,   NodeBorders.SINGLE): '┙',
+		(NodeCorners.SHARP, NodeBorders.SINGLE, NodeBorders.BOLD):   '┚',
+		(NodeCorners.SHARP, NodeBorders.DOUBLE, NodeBorders.BOLD):   '�',
+		(NodeCorners.SHARP, NodeBorders.BOLD,   NodeBorders.DOUBLE): '�',
+		(NodeCorners.ROUND, NodeBorders.SINGLE, NodeBorders.SINGLE): '╯',
+		(NodeCorners.ROUND, NodeBorders.DOUBLE, NodeBorders.DOUBLE): '�',
+		(NodeCorners.ROUND, NodeBorders.BOLD,   NodeBorders.BOLD):   '�',
+		(NodeCorners.ROUND, NodeBorders.DOUBLE, NodeBorders.SINGLE): '�',
+		(NodeCorners.ROUND, NodeBorders.SINGLE, NodeBorders.DOUBLE): '�',
+		(NodeCorners.ROUND, NodeBorders.BOLD,   NodeBorders.SINGLE): '�',
+		(NodeCorners.ROUND, NodeBorders.SINGLE, NodeBorders.BOLD):   '�',
+		(NodeCorners.ROUND, NodeBorders.DOUBLE, NodeBorders.BOLD):   '�',
+		(NodeCorners.ROUND, NodeBorders.BOLD,   NodeBorders.DOUBLE): '�'
 	}
 }
 
@@ -86,14 +150,14 @@ class AbstractNode(type):
 		cls = super().__new__(mcs, name, bases, namespace)
 		if not any(base in mcs._abstract for base in bases):
 			mcs._abstract.add(cls)
-	
+
 		return cls
-	
+
 	def __call__(cls,
 		*args: Any,
 		**kwargs: Any
 	):
-		
+
 		# Prevent instantiation if abstract
 		if cls in AbstractNode._abstract:
 			raise TypeError(f"{cls.__name__} cannot be instantiated directly")
@@ -172,11 +236,17 @@ class Node:
 	padding_bottom = SubDescriptor(padding, BOTTOM)
 	padding_left = SubDescriptor(padding, LEFT)
 
-	border = DirectionalDescriptor('none', literals=NodeBorder)
-	border_top = SubDescriptor(border, TOP)
-	border_right = SubDescriptor(border, RIGHT)
-	border_bottom = SubDescriptor(border, BOTTOM)
-	border_left = SubDescriptor(border, LEFT)
+	borders = DirectionalDescriptor('none', literals=NodeBorders)
+	border_top = SubDescriptor(borders, TOP)
+	border_right = SubDescriptor(borders, RIGHT)
+	border_bottom = SubDescriptor(borders, BOTTOM)
+	border_left = SubDescriptor(borders, LEFT)
+
+	corners = QuadrantDescriptor('sharp', literals=NodeCorners)
+	border_top_left = SubDescriptor(borders, TOP_LEFT)
+	border_top_right = SubDescriptor(borders, TOP_RIGHT)
+	border_bottom_left = SubDescriptor(borders, BOTTOM_LEFT)
+	border_bottom_right = SubDescriptor(borders, BOTTOM_RIGHT)
 
 	overflow =  DirectionalDescriptor('hide', literals=NodeOverflow)
 	overflow_top = SubDescriptor(overflow, TOP)
@@ -282,15 +352,20 @@ class Node:
 		drawn_bottom = min(rect_bottom, clip_bottom)
 		drawn_left = max(rect_left, clip_left)
 
-		top_border = self.border[TOP].value
-		right_border = self.border[RIGHT].value
-		bottom_border = self.border[BOTTOM].value
-		left_border = self.border[LEFT].value
+		top_border = self.borders[TOP].value
+		right_border = self.borders[RIGHT].value
+		bottom_border = self.borders[BOTTOM].value
+		left_border = self.borders[LEFT].value
 
-		has_top = top_border != NodeBorder.NONE
-		has_right = right_border != NodeBorder.NONE
-		has_bottom = bottom_border != NodeBorder.NONE
-		has_left = left_border != NodeBorder.NONE
+		top_left_corner = self.corners[TOP_LEFT].value
+		top_right_corner = self.corners[TOP_RIGHT].value
+		bottom_left_corner = self.corners[BOTTOM_LEFT].value
+		bottom_right_corner = self.corners[BOTTOM_RIGHT].value
+
+		has_top = top_border != NodeBorders.NONE
+		has_right = right_border != NodeBorders.NONE
+		has_bottom = bottom_border != NodeBorders.NONE
+		has_left = left_border != NodeBorders.NONE
 
 		# Fill nodes if necissary
 		if self.mouse_events.value == NodeMouseEvents.CAPTURE:
@@ -311,16 +386,16 @@ class Node:
 				return
 
 			# Single column — collapse to a vertical line
-			style = left_border if has_left else right_border if has_right else NodeBorder.NONE
-			if style != NodeBorder.NONE and clip_left <= rect_left <= clip_right:
+			style = left_border if has_left else right_border if has_right else NodeBorders.NONE
+			if style != NodeBorders.NONE and clip_left <= rect_left <= clip_right:
 				canvas.setVLine(_VLINE[style], drawn_left, drawn_top, drawn_bottom)
 
 			return
 
 		# Single row — collapse to a horizontal line
 		if rect_top == rect_bottom:
-			style = top_border if has_top else bottom_border if has_bottom else NodeBorder.NONE
-			if style != NodeBorder.NONE and clip_top <= rect_top <= clip_bottom:
+			style = top_border if has_top else bottom_border if has_bottom else NodeBorders.NONE
+			if style != NodeBorders.NONE and clip_top <= rect_top <= clip_bottom:
 				canvas.setHLine(_HLINE[style], drawn_left, drawn_right, drawn_top)
 
 			return
@@ -336,26 +411,40 @@ class Node:
 
 		# Draw sides
 		if top_visible:
-			canvas.setHLine(_HLINE[top_border], drawn_left,  drawn_right,  drawn_top)
+			canvas.setHLine(_HLINE[top_border], drawn_left, drawn_right,  drawn_top)
 		if bottom_visible:
-			canvas.setHLine(_HLINE[bottom_border], drawn_left,  drawn_right, drawn_bottom)
+			canvas.setHLine(_HLINE[bottom_border], drawn_left, drawn_right, drawn_bottom)
 		if right_visible:
 			canvas.setVLine(_VLINE[right_border], drawn_right, drawn_top, drawn_bottom)
 		if left_visible:
-			canvas.setVLine(_VLINE[left_border], drawn_left,  drawn_top, drawn_bottom)
+			canvas.setVLine(_VLINE[left_border], drawn_left, drawn_top, drawn_bottom)
 
 		# Draw corners
 		if top_visible:
 			if left_visible:
-				canvas.setChar(_CORNERS[(TOP, LEFT)][(top_border, left_border)], drawn_left, drawn_top)
+				canvas.setChar(
+					_CORNERS[TOP_LEFT][(top_left_corner, top_border, left_border)],
+					drawn_left, drawn_top
+				)
+
 			if right_visible:
-				canvas.setChar(_CORNERS[(TOP, RIGHT)][(top_border, right_border)], drawn_right, drawn_top)
+				canvas.setChar(
+					_CORNERS[TOP_RIGHT][(top_right_corner, top_border, right_border)],
+					drawn_right, drawn_top
+				)
 
 		if bottom_visible:
 			if left_visible:
-				canvas.setChar(_CORNERS[(BOTTOM, LEFT)][(bottom_border, left_border)], drawn_left, drawn_bottom)
+				canvas.setChar(
+					_CORNERS[BOTTOM_LEFT][(bottom_left_corner, bottom_border, left_border)],
+					drawn_left, drawn_bottom
+				)
+
 			if right_visible:
-				canvas.setChar(_CORNERS[(BOTTOM, RIGHT)][(bottom_border, right_border)], drawn_right, drawn_bottom)
+				canvas.setChar(
+					_CORNERS[BOTTOM_RIGHT][(bottom_right_corner, bottom_border, right_border)],
+					drawn_right, drawn_bottom
+				)
 
 	# ──── Compute pipeline
 
@@ -396,9 +485,9 @@ class Node:
 		self._inner_offset[axis] = first_padding.computed + last_padding.computed
 		self._outer_offset[axis] = first_margin.computed + last_margin.computed
 
-		if self.border[first_direction].value != NodeBorder.NONE:
+		if self.borders[first_direction].value != NodeBorders.NONE:
 			self._inner_offset[axis] += 1
-		if self.border[last_direction].value != NodeBorder.NONE:
+		if self.borders[last_direction].value != NodeBorders.NONE:
 			self._inner_offset[axis] += 1
 
 	def _computePreferredAxial(self, axis: Axis, root: Node) -> None:
@@ -551,7 +640,7 @@ class Parent(Node, metaclass=AbstractNode):
 	def removeChild(self, child: Node) -> None:
 		if child not in self._children:
 			return
-		
+
 		# Update sibling index
 		node = child._next
 		while node:
@@ -595,7 +684,7 @@ class Parent(Node, metaclass=AbstractNode):
 			self._filtered_children.append(child)
 			if child.positioning.value == NodePositioning.AUTO:
 				self._automatic_children.append(child)
-		
+
 	def _computeContextualAxial(self, axis: Axis, root: Node) -> None:
 		super()._computeContextualAxial(axis, root)
 
@@ -656,7 +745,7 @@ class Box(Parent):
 		self.child_gap.prepare(self.axis.value, default=0)
 
 	def _computePreferredAxial(self, axis: Literal[0] | Literal[1], root: Node) -> None:
-		
+
 		# Compute preferred size
 		if self.child_gap.value != BoxChildGap.AUTO and _compareAxis(axis, self.axis.value):
 			self_size = self.size[axis]
@@ -664,7 +753,7 @@ class Box(Parent):
 			if self_size.value in (NodeSize.GROW, NodeSize.FIT) or self_size.unit == PERCENTAGE:
 				if (gaps := len(self._automatic_children) - 1) > 0:
 					self_size.computed += self.child_gap.computed * gaps
-		
+
 		super()._computePreferredAxial(axis, root)
 
 	def _computeContextualAxial(self, axis: Axis, root: Node) -> None:
@@ -819,7 +908,7 @@ class Box(Parent):
 
 		# Compute internal origin
 		offset = self.origin[axis].computed + self.padding[first_direction].computed
-		if self.border[first_direction].value != NodeBorder.NONE:
+		if self.borders[first_direction].value != NodeBorders.NONE:
 			offset += 1
 
 		# Resolve child alignment
@@ -856,7 +945,7 @@ class Box(Parent):
 
 		# Compute internal origin
 		offset = self.origin[axis].computed + self.padding[first_direction].computed
-		if self.border[first_direction].value != NodeBorder.NONE:
+		if self.borders[first_direction].value != NodeBorders.NONE:
 			offset += 1
 
 		for child in self._automatic_children:

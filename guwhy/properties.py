@@ -22,6 +22,9 @@ type RelativeAxis = Literal[0, 1]
 TOP, RIGHT, BOTTOM, LEFT = 0, 1, 2, 3
 type Direction = Literal[0, 1, 2, 3]
 
+TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT = 0, 1, 2, 3
+type Quadrant = Literal[0, 1, 2, 3]
+
 PIXEL, SQUARE, PERCENTAGE, DIMENSIONLESS, LITERAL, STRING = 0, 1, 2, 3, 4, 5
 type Unit = Literal[0, 1, 2, 3, 4, 5]
 
@@ -254,7 +257,7 @@ class DirectionalDescriptor(BaseDescriptor):
 			case 2: top, right, bottom, left = parts[0], parts[1], parts[0], parts[1]
 			case 3: top, right, bottom, left = parts[0], parts[1], parts[2], parts[1]
 			case 4: top, right, bottom, left = parts[0], parts[1], parts[2], parts[3]
-			case _: raise ValueError(f'Cardinal property must have 1-4 values: {value}')
+			case _: raise ValueError(f'Directional property must have 1-4 values: {value}')
 
 		property = instance.__dict__[self.name]
 		_parse(self, property[TOP], top)
@@ -262,8 +265,50 @@ class DirectionalDescriptor(BaseDescriptor):
 		_parse(self, property[BOTTOM], bottom)
 		_parse(self, property[LEFT], left)
 
+class QuadrantDescriptor(BaseDescriptor):
+	def setup(self, instance: Node) -> None:
+		setattr(instance, self.name, [
+			Property(),
+			Property(),
+			Property(),
+			Property()
+		])
+
+		self.__set__(
+			instance,
+			self.default
+		)
+
+	@overload
+	def __get__(self, instance: None, _: type[Node]) -> QuadrantDescriptor:
+		...
+
+	@overload
+	def __get__(self, instance: Node, _: type[Node]) -> dict[Quadrant, Property]:
+		...
+
+	def __get__(self, instance: Node | None, _: type[Node]) -> dict[Quadrant, Property] | QuadrantDescriptor:
+		if instance is None:
+			return self
+		return instance.__dict__[self.name]
+
+	def __set__(self, instance: Node, value: str) -> None:
+		parts = value.split()
+		match len(parts):
+			case 1: top, right, bottom, left = parts[0], parts[0], parts[0], parts[0]
+			case 2: top, right, bottom, left = parts[0], parts[1], parts[0], parts[1]
+			case 3: top, right, bottom, left = parts[0], parts[1], parts[2], parts[1]
+			case 4: top, right, bottom, left = parts[0], parts[1], parts[2], parts[3]
+			case _: raise ValueError(f'Quadrantial property must have 1-4 values: {value}')
+
+		property = instance.__dict__[self.name]
+		_parse(self, property[TOP_LEFT], top)
+		_parse(self, property[TOP_RIGHT], right)
+		_parse(self, property[BOTTOM_LEFT], bottom)
+		_parse(self, property[BOTTOM_RIGHT], left)
+
 class SubDescriptor:
-	def __init__(self, parent: BaseDescriptor, key: Axis | RelativeAxis | Direction):
+	def __init__(self, parent: BaseDescriptor, key: Axis | RelativeAxis | Direction | Quadrant):
 		self.parent = parent
 		self.key = key
 

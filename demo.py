@@ -6,15 +6,16 @@ W, H = 40, 20
 
 root = Box(
     size = f'{W}px {H}px',
-    border = 'double',
+    borders = 'double single bold',
     children=[
         Node(
             size = '60%',
-            border = 'single'
+            borders = 'single',
+            corners = 'round'
         ),
         Node(
             size = 'grow',
-            border = 'single',
+            borders = 'single',
         )
     ]
 )

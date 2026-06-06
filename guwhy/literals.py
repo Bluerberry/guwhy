@@ -30,10 +30,15 @@ class NodeMinSize(Enum):
 class NodeMaxSize(Enum):
 	NONE = 'none'
 
-class NodeBorder(Enum):
+class NodeBorders(Enum):
 	NONE = 'none'
 	SINGLE = 'single'
 	DOUBLE = 'double'
+	BOLD = 'bold'
+
+class NodeCorners(Enum):
+	SHARP = 'sharp'
+	ROUND = 'round'
 
 class NodeOverflow(Enum):
 	HIDE = 'hide'

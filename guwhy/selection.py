@@ -6,6 +6,7 @@ from typing import Callable, Literal, Iterable
 
 # Internal
 from .layout import *
+from .errors import *
 
 # Types
 type NodeStream = Generator[Node, None, None]
@@ -205,13 +206,6 @@ _STATEMACHINE: dict[tuple[TokenType, ParseState], ParseState] = {
 }
 
 # ─────────────────────────────────── Parser ───────────────────────────────────
-
-class SelectorSyntaxError(Exception):
-
-	@staticmethod
-	def tokenError(raw: str, token: Token, message: str):
-		pointer = ' ' * (token.end - len(token.raw)) + '^' * len(token.raw)
-		return SelectorSyntaxError(f'{message}\n\n  {raw}\n  {pointer}')
 
 class Token:
 	__slots__ = 'token_type', 'raw', 'end'
