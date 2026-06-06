@@ -1,72 +1,70 @@
 
 from __future__ import annotations
 
-# External
-import re
-from enum import Enum, auto
-from typing import Any, Optional
+# External libraries
+from typing import TYPE_CHECKING, Any, Literal, overload
+from enum import Enum
+import re as regex
 
-# Types
-class Axis(Enum):
-	HORIZONTAL = 'horizontal'
-	VERTICAL = 'vertical'
+# Internal libraries
+if TYPE_CHECKING:
+	from .layout import Node
 
-class Direction(Enum):
-	TOP = 'top'
-	RIGHT = 'right'
-	BOTTOM = 'bottom'
-	LEFT = 'left'
+# ─────────────────────────────────── Properties ───────────────────────────────────
 
-class Unit(Enum):
-	PIXEL = auto()
-	SQUARE = auto()
-	PERCENTAGE = auto()
-	DIMENSIONLESS = auto()
-	LITERAL = auto()
-	STRING = auto()
+# These are not enums, due to their hash functions being too damn slow
+HORIZONTAL, VERTICAL = 0, 1
+type Axis = Literal[0, 1]
 
-type AxialProperty = dict[Axis, Property]
-type DirectionalProperty = dict[Direction, Property]
+ALONG, ACROSS = 0, 1
+type RelativeAxis = Literal[0, 1]
 
-# Regex
-_MATCH_PIXELS = re.compile(r'^([0-9]+)px$')
-_MATCH_PERCENTAGES = re.compile(r'^(-?[0-9]+(?:\.[0-9]+)?)%$')
-_MATCH_SQUARES = re.compile(r'^([0-9]+)sq$')
-_MATCH_DIMENSIONLESS = re.compile(r'^([0-9]+)$')
+TOP, RIGHT, BOTTOM, LEFT = 0, 1, 2, 3
+type Direction = Literal[0, 1, 2, 3]
 
-# -----------------------------------> Property
+PIXEL, SQUARE, PERCENTAGE, DIMENSIONLESS, LITERAL, STRING = 0, 1, 2, 3, 4, 5
+type Unit = Literal[0, 1, 2, 3, 4, 5]
 
 class Property:
-	__slots__ = 'raw', 'unit', 'value', 'computed'
+	__slots__ = 'unit', 'value', 'computed'
 
-	def __init__(self, raw, unit, value):
-		self.raw = raw
-		self.unit = unit
-		self.value = value
-		self.computed = None
+	unit: Unit
+	value: Any
+	computed: Any
 
-	def __repr__(self) -> str:
-		return f'Property({self.raw}, computed={self.computed})'
+	def clamp(self, min: int, max: int, new: int | None = None) -> None:
+		if new is not None:
+			self.computed = new
+		if self.computed < min:
+			self.computed = min
+		elif self.computed > max:
+			self.computed = max
 
-	def computeStatic(self, axis: Axis, default: Any = 0):
-		if self.unit in (Unit.PIXEL, Unit.DIMENSIONLESS, Unit.STRING):
+	def prepare(self, axis: Axis, default: Any) -> None:
+		if self.unit in (LITERAL, PERCENTAGE):
+			self.computed = default
+		elif self.unit in (PIXEL, DIMENSIONLESS):
 			self.computed = self.value
-
-		elif self.unit == Unit.SQUARE:
+		elif self.unit == SQUARE:
 			self.computed = self.value
-			if axis == Axis.HORIZONTAL:
+			if axis == HORIZONTAL:
 				self.computed *= 2
 
-		else: # Literals and percentages
-			self.computed = default
+# ─────────────────────────────────── Parsing ───────────────────────────────────
 
-# -----------------------------------> Parsing
+_MATCH_PIXELS = regex.compile(r'^(-?[0-9]+)px$')
+_MATCH_SQUARES = regex.compile(r'^(-?[0-9]+)sq$')
+_MATCH_PERCENTAGES = regex.compile(r'^(-?[0-9]+(?:\.[0-9]+)?)%$')
+_MATCH_DIMENSIONLESS = regex.compile(r'^(-?[0-9]+)$')
 
-_PROPERTY_CACHE = {}
+_PROPERTY_CACHE: dict[
+	tuple[str, bool, bool, bool, bool, bool, type[Enum] | None],
+	tuple[Unit, int | float | str | Enum]
+] = {}
 
-def _parse(descriptor: BaseDescriptor, property: Property, raw: str):
+def _parse(descriptor: BaseDescriptor, property: Property, value: str):
 	key = (
-		raw,
+		value,
 		descriptor.strings,
 		descriptor.pixels,
 		descriptor.squares,
@@ -77,35 +75,34 @@ def _parse(descriptor: BaseDescriptor, property: Property, raw: str):
 
 	if key in _PROPERTY_CACHE:
 		hit = _PROPERTY_CACHE[key]
-	elif descriptor.pixels and (m := _MATCH_PIXELS.match(raw)):
-		hit = _PROPERTY_CACHE[key] = Unit.PIXEL, int(m.group(1))
-	elif descriptor.squares and (m := _MATCH_SQUARES.match(raw)):
-		hit = _PROPERTY_CACHE[key] = Unit.SQUARE, int(m.group(1))
-	elif descriptor.percentages and (m := _MATCH_PERCENTAGES.match(raw)):
-		hit = _PROPERTY_CACHE[key] = Unit.PERCENTAGE, float(m.group(1))
-	elif descriptor.dimensionless and (m := _MATCH_DIMENSIONLESS.match(raw)):
-		hit = _PROPERTY_CACHE[key] = Unit.DIMENSIONLESS, int(m.group(1))
-	elif descriptor.literals and raw in descriptor.literals:
-		hit = _PROPERTY_CACHE[key] = Unit.LITERAL, descriptor.literals(raw)
+	elif descriptor.pixels and (m := _MATCH_PIXELS.match(value)):
+		hit = _PROPERTY_CACHE[key] = PIXEL, int(m.group(1))
+	elif descriptor.squares and (m := _MATCH_SQUARES.match(value)):
+		hit = _PROPERTY_CACHE[key] = SQUARE, int(m.group(1))
+	elif descriptor.percentages and (m := _MATCH_PERCENTAGES.match(value)):
+		hit = _PROPERTY_CACHE[key] = PERCENTAGE, float(m.group(1))
+	elif descriptor.dimensionless and (m := _MATCH_DIMENSIONLESS.match(value)):
+		hit = _PROPERTY_CACHE[key] = DIMENSIONLESS, int(m.group(1))
+	elif descriptor.literals and value in descriptor.literals:
+		hit = _PROPERTY_CACHE[key] = LITERAL, descriptor.literals(value)
 	elif descriptor.strings:
-		hit = _PROPERTY_CACHE[key] = Unit.STRING, raw
+		hit = _PROPERTY_CACHE[key] = STRING, value
 	else:
-		raise ValueError(f'Unsupported property: {raw}')
+		raise ValueError(f'Unsupported property value: {value}')
 
-	property.raw = raw
 	property.unit, property.value = hit
-	property.computed = None
 
-# -----------------------------------> Descriptors
+# ─────────────────────────────────── Descriptors ───────────────────────────────────
 
 class BaseDescriptor:
-	attr: str
+	name: str
+
 	def __init__(self, default: str, *,
 		pixels: bool = False,
 		squares: bool = False,
 		percentages: bool = False,
 		dimensionless: bool = False,
-		literals: Optional[Enum] = None,
+		literals: type[Enum] | None = None,
 		strings: bool = False
 	):
 		self.default = default
@@ -116,109 +113,180 @@ class BaseDescriptor:
 		self.literals = literals
 		self.strings = strings
 
-	def __set_name__(self, owner, name):
+	def __set_name__(self, owner: type[Node], name: str):
+		if '__descriptors__' not in owner.__dict__:
+			owner.__descriptors__ = owner.__descriptors__.copy()
+		if '__styles__' not in owner.__dict__:
+			owner.__styles__ = owner.__styles__.copy()
+
 		owner.__descriptors__.append(self)
 		owner.__styles__.append(name)
-		self.attr = f'_{name}'
+		self.name = f'_{name}'
 
-	def setup(self, _):
-		raise NotImplementedError
+	def setup(self, instance: Node) -> None:
+		raise NotImplementedError()
 
 class PropertyDescriptor(BaseDescriptor):
-	def __get__(self, instance, _):
-		if instance is None:
-			return self
-
-		attr: Property = getattr(instance, self.attr)
-		return attr.raw
-
-	def __set__(self, instance, raw):
-		attr: Property = getattr(instance, self.attr)
-		_parse(self, attr, raw)
-
-	def setup(self, instance):
-		attr = Property(None, None, None)
-		setattr(instance, self.attr, attr)
+	def setup(self, instance: Node) -> None:
+		setattr(instance, self.name, Property())
 		self.__set__(instance, self.default)
 
-class AxialDescriptor(BaseDescriptor):
-	def __get__(self, instance, _):
+	@overload
+	def __get__(self, instance: None, _: type[Node]) -> PropertyDescriptor:
+		...
+
+	@overload
+	def __get__(self, instance: Node, _: type[Node]) -> Property:
+		...
+
+	def __get__(self, instance: Node | None, _: type[Node]) -> Property | PropertyDescriptor:
 		if instance is None:
 			return self
+		return instance.__dict__[self.name]
 
-		attr: AxialProperty = getattr(instance, self.attr)
-		return f'{attr[Axis.HORIZONTAL].raw} {attr[Axis.VERTICAL].raw}'
+	def __set__(self, instance: Node, value: str) -> None:
+		property = instance.__dict__[self.name]
+		_parse(self, property, value)
 
-	def __set__(self, instance, raw):
-		parts = raw.split()
+class AxialDescriptor(BaseDescriptor):
+	def setup(self, instance: Node) -> None:
+		setattr(instance, self.name, [
+			Property(),
+			Property()
+		])
+
+		self.__set__(
+			instance,
+			self.default
+		)
+
+	@overload
+	def __get__(self, instance: None, _: type[Node]) -> AxialDescriptor:
+		...
+
+	@overload
+	def __get__(self, instance: Node, _: type[Node]) -> dict[Axis, Property]:
+		...
+
+	def __get__(self, instance: Node | None, _: type[Node]) -> dict[Axis, Property] | AxialDescriptor:
+		if instance is None:
+			return self
+		return instance.__dict__[self.name]
+
+	def __set__(self, instance: Node, value: str) -> None:
+		parts = value.split()
 		match len(parts):
 			case 1: horizontal, vertical = parts[0], parts[0]
 			case 2: horizontal, vertical = parts[0], parts[1]
-			case _: raise ValueError(f'Axial property must have 1-2 values: {raw}')
+			case _: raise ValueError(f'Axial property must have 1-2 values: {value}')
 
-		attr: AxialProperty = getattr(instance, self.attr)
-		_parse(self, attr[Axis.HORIZONTAL], horizontal)
-		_parse(self, attr[Axis.VERTICAL], vertical)
+		property = instance.__dict__[self.name]
+		_parse(self, property[HORIZONTAL], horizontal)
+		_parse(self, property[VERTICAL], vertical)
 
-	def setup(self, instance):
-		attr = {
-			Axis.HORIZONTAL: Property(None, None, None),
-			Axis.VERTICAL: Property(None, None, None)
-		}
+class RelativeAxialDescriptor(BaseDescriptor):
+	def setup(self, instance: Node) -> None:
+		setattr(instance, self.name, [
+			Property(),
+			Property()
+		])
 
-		setattr(instance, self.attr, attr)
-		self.__set__(instance, self.default)
+		self.__set__(
+			instance,
+			self.default
+		)
 
-class DirectionalDescriptor(BaseDescriptor):
-	def __get__(self, instance, _):
+	@overload
+	def __get__(self, instance: None, _: type[Node]) -> RelativeAxialDescriptor:
+		...
+
+	@overload
+	def __get__(self, instance: Node, _: type[Node]) -> dict[RelativeAxis, Property]:
+		...
+
+	def __get__(self, instance: Node | None, _: type[Node]) -> dict[RelativeAxis, Property] | RelativeAxialDescriptor:
 		if instance is None:
 			return self
+		return instance.__dict__[self.name]
 
-		attr: DirectionalProperty = getattr(instance, self.attr)
-		return f'{attr[Direction.TOP].raw} {attr[Direction.RIGHT].raw} ' \
-			 + f'{attr[Direction.BOTTOM].raw} {attr[Direction.LEFT].raw}'
+	def __set__(self, instance: Node, value: str) -> None:
+		parts = value.split()
+		match len(parts):
+			case 1: along, across = parts[0], parts[0]
+			case 2: along, across = parts[0], parts[1]
+			case _: raise ValueError(f'Relative axial property must have 1-2 values: {value}')
 
-	def __set__(self, instance, raw):
-		parts = raw.split()
+		property = instance.__dict__[self.name]
+		_parse(self, property[ALONG], along)
+		_parse(self, property[ACROSS], across)
+
+class DirectionalDescriptor(BaseDescriptor):
+	def setup(self, instance: Node) -> None:
+		setattr(instance, self.name, [
+			Property(),
+			Property(),
+			Property(),
+			Property()
+		])
+
+		self.__set__(
+			instance,
+			self.default
+		)
+
+	@overload
+	def __get__(self, instance: None, _: type[Node]) -> DirectionalDescriptor:
+		...
+
+	@overload
+	def __get__(self, instance: Node, _: type[Node]) -> dict[Direction, Property]:
+		...
+
+	def __get__(self, instance: Node | None, _: type[Node]) -> dict[Direction, Property] | DirectionalDescriptor:
+		if instance is None:
+			return self
+		return instance.__dict__[self.name]
+
+	def __set__(self, instance: Node, value: str) -> None:
+		parts = value.split()
 		match len(parts):
 			case 1: top, right, bottom, left = parts[0], parts[0], parts[0], parts[0]
 			case 2: top, right, bottom, left = parts[0], parts[1], parts[0], parts[1]
 			case 3: top, right, bottom, left = parts[0], parts[1], parts[2], parts[1]
 			case 4: top, right, bottom, left = parts[0], parts[1], parts[2], parts[3]
-			case _: raise ValueError(f'Cardinal property must have 1-4 values: {raw}')
+			case _: raise ValueError(f'Cardinal property must have 1-4 values: {value}')
 
-		attr: DirectionalProperty = getattr(instance, self.attr)
-		_parse(self, attr[Direction.TOP], top)
-		_parse(self, attr[Direction.RIGHT], right)
-		_parse(self, attr[Direction.BOTTOM], bottom)
-		_parse(self, attr[Direction.LEFT], left)
-
-	def setup(self, instance):
-		attr = {
-			Direction.TOP: Property(None, None, None),
-			Direction.RIGHT: Property(None, None, None),
-			Direction.BOTTOM: Property(None, None, None),
-			Direction.LEFT: Property(None, None, None)
-		}
-
-		setattr(instance, self.attr, attr)
-		self.__set__(instance, self.default)
+		property = instance.__dict__[self.name]
+		_parse(self, property[TOP], top)
+		_parse(self, property[RIGHT], right)
+		_parse(self, property[BOTTOM], bottom)
+		_parse(self, property[LEFT], left)
 
 class SubDescriptor:
-	def __init__(self, parent: BaseDescriptor, key: Axis | Direction):
+	def __init__(self, parent: BaseDescriptor, key: Axis | RelativeAxis | Direction):
 		self.parent = parent
 		self.key = key
 
-	def __set_name__(self, owner, name):
+	def __set_name__(self, owner: type[Node], name: str):
+		if '__styles__' not in owner.__dict__:
+			owner.__styles__ = owner.__styles__.copy()
 		owner.__styles__.append(name)
 
-	def __get__(self, instance, _):
+	@overload
+	def __get__(self, instance: None, _: type[Node]) -> SubDescriptor:
+		...
+
+	@overload
+	def __get__(self, instance: Node, _: type[Node]) -> Property:
+		...
+
+	def __get__(self, instance: Node | None, _: type[Node]) -> Property | SubDescriptor:
 		if instance is None:
 			return self
 
-		attr: AxialProperty | DirectionalProperty = getattr(instance, self.parent.attr)
-		return attr[self.key].raw
+		property = instance.__dict__[self.parent.name]
+		return property[self.key]
 
-	def __set__(self, instance, raw):
-		attr: AxialProperty | DirectionalProperty = getattr(instance, self.parent.attr)
-		_parse(self.parent, attr[self.key], raw)
+	def __set__(self, instance: Node, value: str):
+		property = instance.__dict__[self.parent.name]
+		_parse(self.parent, property[self.key], value)

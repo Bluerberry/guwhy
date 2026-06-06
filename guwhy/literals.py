@@ -1,17 +1,24 @@
 
+# External libraries
 from enum import Enum
+
+# ─────────────────────────────────── Node literals ───────────────────────────────────
+
+class NodeVisibility(Enum):
+	SHOW = 'show'
+	HIDE = 'hide'
+	NONE = 'none'
 
 class NodePositioning(Enum):
 	AUTO = 'auto'
 	RELATIVE = 'relative'
 	ABSOLUTE = 'absolute'
 
-class NodePosition(Enum):
+class NodeZIndex(Enum):
 	AUTO = 'auto'
 
-class NodeOverflow(Enum):
-	HIDE = 'hide'
-	SHOW = 'show'
+class NodeOrigin(Enum):
+	AUTO = 'auto'
 
 class NodeSize(Enum):
 	GROW = 'grow'
@@ -28,36 +35,28 @@ class NodeBorder(Enum):
 	SINGLE = 'single'
 	DOUBLE = 'double'
 
-class NodePlaceSelf(Enum):
-	INHERIT = 'inherit'
-	START = 'start'
-	CENTER = 'center'
-	END = 'end'
+class NodeOverflow(Enum):
+	HIDE = 'hide'
+	SHOW = 'show'
 
-class BoxPlaceContent(Enum):
+class NodeBackground(Enum):
+	OPAQUE = 'opaque'
+	TRANSPARENT = 'transparent'
+
+class NodeMouseEvents(Enum):
+	CAPTURE = 'capture'
+	NONE = 'none'
+
+# ─────────────────────────────────── Box literals ───────────────────────────────────
+
+class BoxAxis(Enum):
+	HORIZONTAL = 'horizontal'
+	VERTICAL = 'vertical'
+
+class BoxPlaceChildren(Enum):
 	START = 'start'
 	CENTER = 'center'
 	END = 'end'
 
 class BoxChildGap(Enum):
 	AUTO = 'auto'
-
-class TextWrap(Enum):
-	NONE = 'none'
-	CHAR = 'char'
-	WORD = 'word'
-
-class TextAlign(Enum):
-	LEFT = 'left'
-	CENTER = 'center'
-	RIGHT = 'right'
-
-class TextPlaceHorz(Enum):
-	LEFT = 'left'
-	CENTER = 'center'
-	RIGHT = 'right'
-
-class TextPlaceVert(Enum):
-	TOP = 'top'
-	CENTER = 'center'
-	BOTTOM = 'bottom'

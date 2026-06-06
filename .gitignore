@@ -1,6 +1,11 @@
+<<<<<<< HEAD
 
 .vscode
 __pycache__
 
 benchmark.py
 test.py
+=======
+.vscode
+__pycache__
+>>>>>>> refactor

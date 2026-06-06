@@ -2,237 +2,239 @@
 from __future__ import annotations
 
 # External
-from enum import Enum, auto
-from typing import Callable
+from typing import Callable, Literal, Iterable
 
 # Internal
-from .nodes import *
+from .layout import *
 
 # Types
-type SelectionSet = set[Node]
-type Operation = Callable[[SelectionSet], SelectionSet]
+type NodeStream = Generator[Node, None, None]
+type Operation = Callable[[NodeStream], NodeStream]
+type TokenType = Literal[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+type ParseState = Literal[0, 1, 2, 3, 4, 5, 6, 7]
 
-# -----------------------------------> Tokens
+# ─────────────────────────────────── Utility ───────────────────────────────────
 
-class TokenType(Enum):
-	ANY = auto()
-	ID = auto()
-	CLASS = auto()
-	CONTEXT = auto()
-	CHILDREN = auto()
-	PARENTS = auto()
-	SIBLINGS = auto()
-	PREV = auto()
-	NEXT = auto()
-	THIS = auto()
-	WHITESPACE = auto()
-	KEY = auto()
+def _createStream[T](source: Iterable[T]) -> Generator[T, None, None]:
+	yield from source
 
-class Token:
-	__slots__ = 'token_type', 'raw', 'end'
+# ─────────────────────────────────── Operations ───────────────────────────────────
 
-	def __init__(self, token_type: TokenType, raw: str, end: int):
-		self.token_type = token_type
-		self.raw = raw
-		self.end = end
+def _selectChildren(upstream: NodeStream) -> NodeStream:
+	for node in upstream:
+		if isinstance(node, Parent):
+			yield from node.children
 
-# -----------------------------------> Operations
+def _selectDescendants(upstream: NodeStream) -> NodeStream:
+	visited = set[int]()
+	for node in upstream:
+		if not isinstance(node, Box):
+			continue
 
-def _selectDescendants(selection: SelectionSet) -> SelectionSet:
-	return {
-		descendant
-		for node in selection
-		if isinstance(node, Box)
-		for descendant in node._descendants
-	}
+		for descendant in node.descendants:
+			if (ID := id(descendant)) in visited:
+				continue
 
-def _selectChildren(selection: SelectionSet) -> SelectionSet:
-	return {
-		child
-		for node in selection
-		if isinstance(node, Box)
-		for child in node._children
-	}
+			visited.add(ID)
+			yield descendant
 
-def _selectParents(selection: SelectionSet) -> SelectionSet:
-	return {
-		node._parent
-		for node in selection
-		if node._parent is not None
-	}
+def _selectParents(upstream: NodeStream) -> NodeStream:
+	visited = set[int]()
+	for node in upstream:
+		if node.parent is None:
+			continue
 
-def _selectSiblings(selection: SelectionSet) -> SelectionSet:
-	return {
-		sibling
-		for node in selection
-		if node._parent
-		for sibling in node._parent._children
-	}
+		if (ID := id(node.parent)) in visited:
+			continue
 
-def _selectPrev(selection: SelectionSet) -> SelectionSet:
-	return {
-		node._prev
-		for node in selection
-		if node._prev is not None
-	}
+		visited.add(ID)
+		yield node.parent
 
-def _selectNext(selection: SelectionSet) -> SelectionSet:
-	return {
-		node._next
-		for node in selection
-		if node._next is not None
-	}
+def _selectSiblings(upstream: NodeStream) -> NodeStream:
+	visited = set[int]()
+	for node in upstream:
+		if node.parent is None:
+			continue
 
-def _selectThis(selection: SelectionSet) -> SelectionSet:
-	return selection
+		for sibling in node.parent.children:
+			if (ID := id(sibling)) in visited:
+				continue
 
-def _selectFirstChild(selection: SelectionSet) -> SelectionSet:
-	return {
-		node
-		for node in selection
-		if node._prev is None
-	}
+			visited.add(ID)
+			yield sibling
 
-def _selectLastChild(selection: SelectionSet) -> SelectionSet:
-	return {
-		node
-		for node in selection
-		if node._next is None
-	}
+def _selectPrev(upstream: NodeStream) -> NodeStream:
+	for node in upstream:
+		if node.prev is not None:
+			yield node.prev
 
-def _selectEvenChildren(selection: SelectionSet) -> SelectionSet:
-	return {
-		node
-		for node in selection
-		if node._index % 2 == 0
-	}
+def _selectNext(upstream: NodeStream) -> NodeStream:
+	for node in upstream:
+		if node.next is not None:
+			yield node.next
 
-def _selectOddChildren(selection: SelectionSet) -> SelectionSet:
-	return {
-		node
-		for node in selection
-		if node._index % 2 == 1
-	}
+def _selectFirstChild(upstream: NodeStream) -> NodeStream:
+	for node in upstream:
+		if node.prev is None:
+			yield node
 
-def _selectWithId(id: str) -> Operation:
-	return lambda selection: {
-		node
-		for node in selection
-		if node.id == id
-	}
+def _selectLastChild(upstream: NodeStream) -> NodeStream:
+	for node in upstream:
+		if node.next is None:
+			yield node
 
-def _selectWithClass(cls: str) -> Operation:
-	return lambda selection: {
-		node
-		for node in selection
-		if cls in node.classlist
-	}
+def _selectEvenChildren(upstream: NodeStream) -> NodeStream:
+	for node in upstream:
+		if node.index is not None and node.index % 2 == 0:
+			yield node
 
-def _selectWithType(type: type) -> Operation:
-	return lambda selection: {
-		node
-		for node in selection
-		if isinstance(node, type)
-	}
+def _selectOddChildren(upstream: NodeStream) -> NodeStream:
+	for node in upstream:
+		if node.index is not None and node.index % 2 == 1:
+			yield node
 
-# -----------------------------------> Lookup tables
+def _selectWithId(upstream: NodeStream, _id: str) -> NodeStream:
+	for node in upstream:
+		if node.id == _id:
+			yield node
+			break
 
-_RESERVED = {
-	'*': TokenType.ANY,
-	'#': TokenType.ID,
-	'.': TokenType.CLASS,
-	':': TokenType.CONTEXT,
-	'>': TokenType.CHILDREN,
-	'<': TokenType.PARENTS,
-	'~': TokenType.SIBLINGS,
-	'-': TokenType.PREV,
-	'+': TokenType.NEXT,
-	'&': TokenType.THIS,
-	' ': TokenType.WHITESPACE,
+def _selectWithClass(upstream: NodeStream, _class: str) -> NodeStream:
+	for node in upstream:
+		if _class in node.classlist:
+			yield node
+
+def _selectWithType(_type: type) -> Operation:
+	def operation(upstream: NodeStream) -> NodeStream:
+		for node in upstream:
+			if type(node) == _type:
+				yield node
+
+	return operation
+
+# ─────────────────────────────────── Maps & constants ───────────────────────────────────
+
+_KEY_TOKEN		  = 0
+_ANY_TOKEN		  = 1
+_ID_TOKEN		  = 2
+_CLASS_TOKEN	  = 3
+_CONTEXT_TOKEN	  = 4
+_CHILDREN_TOKEN	  = 5
+_PARENTS_TOKEN	  = 6
+_SIBLINGS_TOKEN	  = 7
+_PREV_TOKEN		  = 8
+_NEXT_TOKEN		  = 9
+_THIS_TOKEN		  = 10
+_WHITESPACE_TOKEN = 11
+
+_INITIAL_STATE           = 0	# The first state of our statemachine
+_NARROWING_STATE         = 1	# When applying type, context, class, or ID operations
+_EXPANDING_STATE         = 2	# When applying parents, children, siblings, prev, or next operations
+_FIRST_WHITESPACE_STATE  = 3	# Optional after narrowing, followed by expanding
+_SECOND_WHITESPACE_STATE = 4	# Required after expanding, followed by narrowing
+_EXPECT_ID_STATE         = 5	# Awaiting id after `#`
+_EXPECT_CLASS_STATE      = 6	# Awaiting class after `.`
+_EXPECT_CONTEXT_STATE    = 7	# Awaiting context after `:`
+
+_RESERVED: dict[str, TokenType] = {
+	'*': _ANY_TOKEN,
+	'&': _THIS_TOKEN,
+	'#': _ID_TOKEN,
+	'.': _CLASS_TOKEN,
+	':': _CONTEXT_TOKEN,
+	'>': _CHILDREN_TOKEN,
+	'<': _PARENTS_TOKEN,
+	'~': _SIBLINGS_TOKEN,
+	'-': _PREV_TOKEN,
+	'+': _NEXT_TOKEN,
+	' ': _WHITESPACE_TOKEN
 }
 
-_TYPE_OPS = {
-	'box': _selectWithType(Box),
-	'text': _selectWithType(Text)
+_TYPE_OPS: dict[str, Operation] = {
+	'node': _selectWithType(Node),
+	'box': _selectWithType(Box)
 }
 
-_CONTEXT_OPS = {
+_CONTEXT_OPS: dict[str, Operation] = {
 	'first': _selectFirstChild,
 	'last': _selectLastChild,
 	'even': _selectEvenChildren,
 	'odd': _selectOddChildren,
 }
 
-_EXPANDING_OPS = {
-	TokenType.PARENTS: _selectParents,
-	TokenType.CHILDREN: _selectChildren,
-	TokenType.SIBLINGS: _selectSiblings,
-	TokenType.PREV: _selectPrev,
-	TokenType.NEXT: _selectNext,
-	TokenType.THIS: _selectThis,
+_EXPANDING_OPS: dict[TokenType, Operation] = {
+	_PARENTS_TOKEN: _selectParents,
+	_CHILDREN_TOKEN: _selectChildren,
+	_SIBLINGS_TOKEN: _selectSiblings,
+	_PREV_TOKEN: _selectPrev,
+	_NEXT_TOKEN: _selectNext
 }
 
-# -----------------------------------> Parser
+_STATEMACHINE: dict[tuple[TokenType, ParseState], ParseState] = {
+	(_ANY_TOKEN,        _INITIAL_STATE):            _NARROWING_STATE,
+	(_KEY_TOKEN,        _INITIAL_STATE):            _NARROWING_STATE,
+	(_THIS_TOKEN,       _INITIAL_STATE):            _NARROWING_STATE,
+	(_ID_TOKEN,         _INITIAL_STATE):            _EXPECT_ID_STATE,
+	(_CLASS_TOKEN,      _INITIAL_STATE):            _EXPECT_CLASS_STATE,
+	(_CONTEXT_TOKEN,    _INITIAL_STATE):            _EXPECT_CONTEXT_STATE,
+	(_ID_TOKEN,         _NARROWING_STATE):          _EXPECT_ID_STATE,
+	(_CLASS_TOKEN,      _NARROWING_STATE):          _EXPECT_CLASS_STATE,
+	(_CONTEXT_TOKEN,    _NARROWING_STATE):          _EXPECT_CONTEXT_STATE,
+	(_WHITESPACE_TOKEN, _NARROWING_STATE):          _FIRST_WHITESPACE_STATE,
+	(_ANY_TOKEN,        _FIRST_WHITESPACE_STATE):   _NARROWING_STATE,
+	(_KEY_TOKEN,        _FIRST_WHITESPACE_STATE):   _NARROWING_STATE,
+	(_THIS_TOKEN,       _FIRST_WHITESPACE_STATE):   _NARROWING_STATE,
+	(_ID_TOKEN,         _FIRST_WHITESPACE_STATE):   _EXPECT_ID_STATE,
+	(_CLASS_TOKEN,      _FIRST_WHITESPACE_STATE):   _EXPECT_CLASS_STATE,
+	(_CONTEXT_TOKEN,    _FIRST_WHITESPACE_STATE):   _EXPECT_CONTEXT_STATE,
+	(_PARENTS_TOKEN,    _FIRST_WHITESPACE_STATE):   _EXPANDING_STATE,
+	(_CHILDREN_TOKEN,   _FIRST_WHITESPACE_STATE):   _EXPANDING_STATE,
+	(_SIBLINGS_TOKEN,   _FIRST_WHITESPACE_STATE):   _EXPANDING_STATE,
+	(_PREV_TOKEN,       _FIRST_WHITESPACE_STATE):   _EXPANDING_STATE,
+	(_NEXT_TOKEN,       _FIRST_WHITESPACE_STATE):   _EXPANDING_STATE,
+	(_WHITESPACE_TOKEN, _EXPANDING_STATE):          _SECOND_WHITESPACE_STATE,
+	(_ANY_TOKEN,        _SECOND_WHITESPACE_STATE):  _NARROWING_STATE,
+	(_KEY_TOKEN,        _SECOND_WHITESPACE_STATE):  _NARROWING_STATE,
+	(_THIS_TOKEN,       _SECOND_WHITESPACE_STATE):  _NARROWING_STATE,
+	(_ID_TOKEN,         _SECOND_WHITESPACE_STATE):  _EXPECT_ID_STATE,
+	(_CLASS_TOKEN,      _SECOND_WHITESPACE_STATE):  _EXPECT_CLASS_STATE,
+	(_CONTEXT_TOKEN,    _SECOND_WHITESPACE_STATE):  _EXPECT_CONTEXT_STATE,
+	(_KEY_TOKEN,        _EXPECT_ID_STATE):          _NARROWING_STATE,
+	(_KEY_TOKEN,        _EXPECT_CLASS_STATE):       _NARROWING_STATE,
+	(_KEY_TOKEN,        _EXPECT_CONTEXT_STATE):     _NARROWING_STATE,
+}
+
+# ─────────────────────────────────── Parser ───────────────────────────────────
 
 class SelectorSyntaxError(Exception):
-	def __init__(self, raw: str, token: Token, message: str):
+
+	@staticmethod
+	def tokenError(raw: str, token: Token, message: str):
 		pointer = ' ' * (token.end - len(token.raw)) + '^' * len(token.raw)
-		super().__init__(f'ParseError: {message}\n\n  {raw}\n  {pointer}')
+		return SelectorSyntaxError(f'{message}\n\n  {raw}\n  {pointer}')
 
-class ParseState(Enum):
-	NEUTRAL           = auto()
-	NARROWING         = auto()
-	EXPANDING         = auto()
-	SECOND_WHITESPACE = auto()
-	FIRST_WHITESPACE  = auto()
-	EXPECT_ID         = auto()
-	EXPECT_CLASS      = auto()
-	EXPECT_CONTEXT    = auto()
+class Token:
+	__slots__ = 'token_type', 'raw', 'end'
 
-_STATEMACHINE = {
-	(TokenType.ANY,        ParseState.NEUTRAL):            ParseState.NARROWING,
-	(TokenType.KEY,        ParseState.NEUTRAL):            ParseState.NARROWING,
-	(TokenType.THIS,       ParseState.NEUTRAL):            ParseState.NARROWING,
-	(TokenType.ID,         ParseState.NEUTRAL):            ParseState.EXPECT_ID,
-	(TokenType.CLASS,      ParseState.NEUTRAL):            ParseState.EXPECT_CLASS,
-	(TokenType.CONTEXT,    ParseState.NEUTRAL):            ParseState.EXPECT_CONTEXT,
-	(TokenType.ID,         ParseState.NARROWING):          ParseState.EXPECT_ID,
-	(TokenType.CLASS,      ParseState.NARROWING):          ParseState.EXPECT_CLASS,
-	(TokenType.CONTEXT,    ParseState.NARROWING):          ParseState.EXPECT_CONTEXT,
-	(TokenType.WHITESPACE, ParseState.NARROWING):          ParseState.FIRST_WHITESPACE,
-	(TokenType.ANY,        ParseState.FIRST_WHITESPACE):   ParseState.NARROWING,
-	(TokenType.KEY,        ParseState.FIRST_WHITESPACE):   ParseState.NARROWING,
-	(TokenType.THIS,       ParseState.FIRST_WHITESPACE):   ParseState.NARROWING,
-	(TokenType.ID,         ParseState.FIRST_WHITESPACE):   ParseState.EXPECT_ID,
-	(TokenType.CLASS,      ParseState.FIRST_WHITESPACE):   ParseState.EXPECT_CLASS,
-	(TokenType.CONTEXT,    ParseState.FIRST_WHITESPACE):   ParseState.EXPECT_CONTEXT,
-	(TokenType.PARENTS,    ParseState.FIRST_WHITESPACE):   ParseState.EXPANDING,
-	(TokenType.CHILDREN,   ParseState.FIRST_WHITESPACE):   ParseState.EXPANDING,
-	(TokenType.SIBLINGS,   ParseState.FIRST_WHITESPACE):   ParseState.EXPANDING,
-	(TokenType.PREV,       ParseState.FIRST_WHITESPACE):   ParseState.EXPANDING,
-	(TokenType.NEXT,       ParseState.FIRST_WHITESPACE):   ParseState.EXPANDING,
-	(TokenType.WHITESPACE, ParseState.EXPANDING):          ParseState.SECOND_WHITESPACE,
-	(TokenType.ANY,        ParseState.SECOND_WHITESPACE):  ParseState.NARROWING,
-	(TokenType.KEY,        ParseState.SECOND_WHITESPACE):  ParseState.NARROWING,
-	(TokenType.THIS,       ParseState.SECOND_WHITESPACE):  ParseState.NARROWING,
-	(TokenType.ID,         ParseState.SECOND_WHITESPACE):  ParseState.EXPECT_ID,
-	(TokenType.CLASS,      ParseState.SECOND_WHITESPACE):  ParseState.EXPECT_CLASS,
-	(TokenType.CONTEXT,    ParseState.SECOND_WHITESPACE):  ParseState.EXPECT_CONTEXT,
-	(TokenType.KEY,        ParseState.EXPECT_ID):          ParseState.NARROWING,
-	(TokenType.KEY,        ParseState.EXPECT_CLASS):       ParseState.NARROWING,
-	(TokenType.KEY,        ParseState.EXPECT_CONTEXT):     ParseState.NARROWING,
-}
+	token_type: TokenType
+	raw: str
+	end: int
 
-def _tokenize(raw: str) -> list[Token]:
-	collapse_whitespace = False
-	raw = raw.strip()
-	tokens = []
-	token = ''
+	def __init__(self, token_type: TokenType, raw: str, end: int):
+		self.token_type = token_type
+		self.raw = raw
+		self.end = end
 
-	for current, char in enumerate(raw):
+def _tokenize(selector: str) -> list[Token]:
+	collapse_whitespace: bool = False
+	tokens: list[Token] = []
+	token: str = ''
+
+	selector = selector.strip()
+	for column, char in enumerate(selector):
 		if char in _RESERVED:
 			token_type = _RESERVED[char]
-			if token_type == TokenType.WHITESPACE:
+			if token_type == _WHITESPACE_TOKEN:
 				if collapse_whitespace:
 					continue
 				collapse_whitespace = True
@@ -241,69 +243,84 @@ def _tokenize(raw: str) -> list[Token]:
 				collapse_whitespace = False
 
 			if token:
-				tokens.append(Token(TokenType.KEY, token, current))
+				tokens.append(Token(_KEY_TOKEN, token, column))
 				token = ''
-			tokens.append(Token(token_type, char, current + 1))
+
+			tokens.append(Token(token_type, char, column + 1))
 			continue
 
 		collapse_whitespace = False
 		token += char
 
 	if token:
-		tokens.append(Token(TokenType.KEY, token, len(raw)))
+		tokens.append(Token(_KEY_TOKEN, token, len(selector)))
 	return tokens
 
-def _parse(raw: str, tokens: list[Token]) -> list[Operation]:
-	operations: list[Operation] = []
-	state = ParseState.NEUTRAL
-	token = None
+def _parse(selector: str, tokens: list[Token], stream: NodeStream) -> NodeStream:
+	state: ParseState = _INITIAL_STATE
+	token: Token | None = None
 
 	for token in tokens:
 		key = token.token_type, state
 		if key not in _STATEMACHINE:
-			raise SelectorSyntaxError(raw, token, 'Unexpected token')
+			raise SelectorSyntaxError.tokenError(selector, token, 'Unexpected token')
 
 		if token.token_type in _EXPANDING_OPS:
-			operations.append(_EXPANDING_OPS[token.token_type])
-
-		else:
-			if state == ParseState.FIRST_WHITESPACE:
-				operations.append(_selectDescendants)
-			if state == ParseState.EXPECT_ID:
-				operations.append(_selectWithId(token.raw))
-			elif state == ParseState.EXPECT_CLASS:
-				operations.append(_selectWithClass(token.raw))
-			elif state == ParseState.EXPECT_CONTEXT:
-				if token.raw not in _CONTEXT_OPS:
-					raise SelectorSyntaxError(raw, token, 'Unknown context')
-				operations.append(_CONTEXT_OPS[token.raw])
-			elif token.token_type == TokenType.KEY:
-				if token.raw not in _TYPE_OPS:
-					raise SelectorSyntaxError(raw, token, 'Unknown type')
-				operations.append(_TYPE_OPS[token.raw])
+			stream = _EXPANDING_OPS[token.token_type](stream)
+		elif state == _FIRST_WHITESPACE_STATE:
+			stream = _selectDescendants(stream)
+		elif state == _EXPECT_ID_STATE:
+			stream = _selectWithId(stream, token.raw)
+		elif state == _EXPECT_CLASS_STATE:
+			stream = _selectWithClass(stream, token.raw)
+		elif state == _EXPECT_CONTEXT_STATE:
+			if token.raw not in _CONTEXT_OPS:
+				raise SelectorSyntaxError.tokenError(selector, token, 'Unknown context')
+			stream = _CONTEXT_OPS[token.raw](stream)
+		elif token.token_type == _KEY_TOKEN:
+			if token.raw not in _TYPE_OPS:
+				raise SelectorSyntaxError.tokenError(selector, token, 'Unknown type')
+			stream = _TYPE_OPS[token.raw](stream)
 
 		state = _STATEMACHINE[key]
 
-	if state != ParseState.NARROWING:
-		raise SelectorSyntaxError(raw, token, 'Unexpected EOL')
-	return operations
+	if token is None:
+		raise SelectorSyntaxError('Empty selector')
+	if state != _NARROWING_STATE:
+		raise SelectorSyntaxError.tokenError(selector, token, 'Unexpected EOL')
 
-# -----------------------------------> Selection
+	return stream
+
+# ─────────────────────────────────── Selection ───────────────────────────────────
 
 class Selection:
-	selection: SelectionSet
+	_stream: NodeStream
 
-	def __init__(self, nodes: list[Node]):
-		self.selection = set(nodes)
+	def __init__(self, stream: NodeStream):
+		self._stream = stream
 
-	def applyStyles(self, **kwargs) -> Selection:
-		for node in self.selection:
-			node.applyStyles(**kwargs)
-		return self
+	# ──── Public
+
+	@staticmethod
+	def using(root: Node, selector: str) -> Selection:
+		nodes = [root]
+		if isinstance(root, Parent):
+			nodes.extend(root.descendants)
+
+		tokens = _tokenize(selector)
+		stream = _createStream(nodes)
+		return Selection(_parse(selector, tokens, stream))
 
 	def select(self, selector: str) -> Selection:
 		tokens = _tokenize(selector)
-		operations = _parse(selector, tokens)
-		for op in operations:
-			self.selection = op(self.selection)
+		return Selection(_parse(selector, tokens, self._stream))
+
+	def filter(self, selector: str) -> Selection:
+		tokens = _tokenize(selector)
+		self._stream = _parse(selector, tokens, self._stream)
+		return self
+
+	def apply(self, **kwargs: str) -> Selection:
+		for node in self._stream:
+			node.apply(**kwargs)
 		return self
