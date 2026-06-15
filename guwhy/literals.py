@@ -2,7 +2,7 @@
 # External libraries
 from enum import Enum
 
-# ─────────────────────────────────── Node literals ───────────────────────────────────
+# ─────────────────────────────────── Node ───────────────────────────────────
 
 class NodeVisibility(Enum):
 	SHOW = 'show'
@@ -44,6 +44,12 @@ class NodeOverflow(Enum):
 	HIDE = 'hide'
 	SHOW = 'show'
 
+class NodePlaceSelfAcross(Enum):
+	INHERIT = 'inherit'
+	START = 'start'
+	CENTER = 'center'
+	END = 'end'
+
 class NodeBackground(Enum):
 	OPAQUE = 'opaque'
 	TRANSPARENT = 'transparent'
@@ -52,7 +58,7 @@ class NodeMouseEvents(Enum):
 	CAPTURE = 'capture'
 	NONE = 'none'
 
-# ─────────────────────────────────── Box literals ───────────────────────────────────
+# ─────────────────────────────────── Box ───────────────────────────────────
 
 class BoxAxis(Enum):
 	HORIZONTAL = 'horizontal'
@@ -65,3 +71,32 @@ class BoxPlaceChildren(Enum):
 
 class BoxChildGap(Enum):
 	AUTO = 'auto'
+
+# ─────────────────────────────────── Grid ───────────────────────────────────
+
+class GridLayout(Enum):
+	AUTO = 'auto'
+
+class GridPlaceChildrenH(Enum):
+	LEFT = 'left'
+	CENTER = 'center'
+	RIGHT = 'right'
+
+class GridPlaceChildrenV(Enum):
+	TOP = 'top'
+	CENTER = 'center'
+	BOTTOM = 'bottom'
+
+class GridChildGap(Enum):
+	AUTO = 'auto'
+	SINGLE = 'single'
+	DOUBLE = 'double'
+	BOLD = 'bold'
+
+class GridColumnSize(Enum):
+	GROW = 'grow'
+	FIT = 'fit'
+
+class GridRowSize(Enum):
+	GROW = 'grow'
+	FIT = 'fit'

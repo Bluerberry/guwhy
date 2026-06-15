@@ -188,7 +188,7 @@ class Node:
 	def next(self) -> Node | None:
 		return self._next
 
-	# ──── Compute intermediaries
+	# ──── Intermediaries
 
 	_inner_offset: dict[Axis, int]	# total padding + border per axis
 	_outer_offset: dict[Axis, int]	# total margin per axis
@@ -565,6 +565,9 @@ class Node:
 		self._clip[last_direction] = self_rect_last
 
 class Parent(Node, metaclass=AbstractNode):
+
+	# ──── Intermediaries
+
 	_children: list[Node]
 	_descendants: set[Node]
 	_filtered_children: list[Node]
@@ -744,7 +747,7 @@ class Box(Parent):
 		# Prepare properties
 		self.child_gap.prepare(self.axis.value, default=0)
 
-	def _computePreferredAxial(self, axis: Literal[0] | Literal[1], root: Node) -> None:
+	def _computePreferredAxial(self, axis: Axis, root: Node) -> None:
 
 		# Compute preferred size
 		if self.child_gap.value != BoxChildGap.AUTO and _compareAxis(axis, self.axis.value):
@@ -965,3 +968,26 @@ class Box(Parent):
 					child_origin.computed += int(remaining / 2)
 				elif place_children_across == BoxPlaceChildren.END:
 					child_origin.computed += remaining
+
+class Grid(Parent):
+
+	# ──── Styles
+
+	layout = AxialDescriptor('auto', dimensionless=True, literals=GridLayout)
+	columns = SubDescriptor(layout, HORIZONTAL)
+	rows = SubDescriptor(layout, VERTICAL)
+
+	column_size = ArrayDescriptor('fit', pixels=True, squares=True, percentages=True, literals=GridColumnSize)
+	row_size = ArrayDescriptor('fit', pixels=True, squares=True, percentages=True, literals=GridRowSize)
+
+	place_children = AxialDescriptor('left top')
+	place_children_h = SubDescriptor(place_children, HORIZONTAL, literals=GridPlaceChildrenH)
+	place_children_v = SubDescriptor(place_children, VERTICAL, literals=GridPlaceChildrenV)
+
+	child_gap = AxialDescriptor('0px', pixels=True, squares=True, literals=GridChildGap)
+	child_gap_h = SubDescriptor(place_children, HORIZONTAL)
+	child_gap_v = SubDescriptor(place_children, VERTICAL)
+
+	# ──── Compute pipeline
+
+	...

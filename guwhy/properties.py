@@ -307,6 +307,37 @@ class QuadrantDescriptor(BaseDescriptor):
 		_parse(self, property[BOTTOM_LEFT], bottom)
 		_parse(self, property[BOTTOM_RIGHT], left)
 
+class ArrayDescriptor(BaseDescriptor):
+	def setup(self, instance: Node) -> None:
+		setattr(instance, self.name, [])
+
+		self.__set__(
+			instance,
+			self.default
+		)
+
+	@overload
+	def __get__(self, instance: None, _: type[Node]) -> ArrayDescriptor:
+		...
+
+	@overload
+	def __get__(self, instance: Node, _: type[Node]) -> list[Property]:
+		...
+
+	def __get__(self, instance: Node | None, _: type[Node]) -> list[Property] | ArrayDescriptor:
+		if instance is None:
+			return self
+		return instance.__dict__[self.name]
+
+	def __set__(self, instance: Node, value: str) -> None:
+		properties = []
+		for part in value.split():
+			property = Property()
+			_parse(self, property, part)
+			properties.append(property)
+
+		instance.__dict__[self.name] = properties
+
 class SubDescriptor:
 	def __init__(self, parent: BaseDescriptor, key: Axis | RelativeAxis | Direction | Quadrant):
 		self.parent = parent
