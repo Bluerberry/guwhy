@@ -7,6 +7,9 @@ if TYPE_CHECKING:
 
 # ─────────────────────────────────── Errors ───────────────────────────────────
 
+class InternalError(Exception):
+	pass
+
 class SelectorSyntaxError(Exception):
 
 	@staticmethod

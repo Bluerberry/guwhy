@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 # External libraries
-from typing import TYPE_CHECKING, Any, Literal, overload
+from typing import TYPE_CHECKING, cast, overload, Any, Literal
 from enum import Enum
 import re as regex
 
@@ -10,23 +10,67 @@ import re as regex
 if TYPE_CHECKING:
 	from .layout import Node
 
-# ─────────────────────────────────── Properties ───────────────────────────────────
+# ─────────────────────────────────── Types ───────────────────────────────────
 
-# These are not enums, due to their hash functions being too damn slow
-HORIZONTAL, VERTICAL = 0, 1
+type Unit = int
+PIXEL			= 0b0000001
+SQUARE			= 0b0000010
+FRACTION		= 0b0000100
+PERCENTAGE		= 0b0001000
+DIMENSIONLESS	= 0b0010000
+LITERAL			= 0b0100000
+STRING			= 0b1000000
+
+type Unset = object
+UNSET = object()
+
+type All = object
+ALL = object()
+
 type Axis = Literal[0, 1]
+HORIZONTAL, VERTICAL = 0, 1
 
-ALONG, ACROSS = 0, 1
 type RelativeAxis = Literal[0, 1]
+ALONG, ACROSS = 0, 1
 
-TOP, RIGHT, BOTTOM, LEFT = 0, 1, 2, 3
 type Direction = Literal[0, 1, 2, 3]
+TOP, RIGHT, BOTTOM, LEFT = 0, 1, 2, 3
 
-TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT = 0, 1, 2, 3
 type Quadrant = Literal[0, 1, 2, 3]
+TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT = 0, 1, 2, 3
 
-PIXEL, SQUARE, PERCENTAGE, DIMENSIONLESS, LITERAL, STRING = 0, 1, 2, 3, 4, 5
-type Unit = Literal[0, 1, 2, 3, 4, 5]
+type Key = Axis | RelativeAxis | Direction | Quadrant
+
+# ─────────────────────────────────── Property ───────────────────────────────────
+
+_PARSE_CACHE: dict[tuple[str, Unit], Any] = {}
+_PARSE_DATA = (
+	(
+		PIXEL,
+		regex.compile(r'^(-?[0-9]+)px$'),
+		int
+	),
+	(
+		SQUARE,
+		regex.compile(r'^(-?[0-9]+)sq$'),
+		int
+	),
+	(
+		FRACTION,
+		regex.compile(r'^([0-9]+)fr$'),
+		int
+	),
+	(
+		PERCENTAGE,
+		regex.compile(r'^(-?[0-9]+(?:\.[0-9]+)?)%$'),
+		float
+	),
+	(
+		DIMENSIONLESS,
+		regex.compile(r'^(-?[0-9]+)$'),
+		int
+	)
+)
 
 class Property:
 	__slots__ = 'unit', 'value', 'computed'
@@ -35,86 +79,55 @@ class Property:
 	value: Any
 	computed: Any
 
-	def clamp(self, min: int, max: int, new: int | None = None) -> None:
-		if new is not None:
-			self.computed = new
-		if self.computed < min:
-			self.computed = min
-		elif self.computed > max:
-			self.computed = max
-
-	def prepare(self, axis: Axis, default: Any) -> None:
-		if self.unit in (LITERAL, PERCENTAGE):
+	def prepare(self, axis: Axis, *, default: Any | Unset = UNSET) -> None:
+		if self.unit & FRACTION | PERCENTAGE | LITERAL and default != UNSET:
 			self.computed = default
-		elif self.unit in (PIXEL, DIMENSIONLESS):
+
+		else:
 			self.computed = self.value
-		elif self.unit == SQUARE:
-			self.computed = self.value
-			if axis == HORIZONTAL:
+			if self.unit & SQUARE and axis == HORIZONTAL:
 				self.computed *= 2
 
-# ─────────────────────────────────── Parsing ───────────────────────────────────
+	def parse(self, value: str, units: Unit, literals: type[Enum] | None):
+		for unit, pattern, cast in _PARSE_DATA:
+			if not units & unit:
+				continue
 
-_MATCH_PIXELS = regex.compile(r'^(-?[0-9]+)px$')
-_MATCH_SQUARES = regex.compile(r'^(-?[0-9]+)sq$')
-_MATCH_PERCENTAGES = regex.compile(r'^(-?[0-9]+(?:\.[0-9]+)?)%$')
-_MATCH_DIMENSIONLESS = regex.compile(r'^(-?[0-9]+)$')
+			key = value, unit
+			if key in _PARSE_CACHE:
+				self.value = _PARSE_CACHE[key]
+				self.unit = unit
+				return
 
-_PROPERTY_CACHE: dict[
-	tuple[str, bool, bool, bool, bool, bool, type[Enum] | None],
-	tuple[Unit, int | float | str | Enum]
-] = {}
+			elif match := pattern.match(value):
+				self.value = _PARSE_CACHE[key] = cast(match.group(1))
+				self.unit = unit
+				return
 
-def _parse(descriptor: BaseDescriptor, property: Property, value: str):
-	key = (
-		value,
-		descriptor.strings,
-		descriptor.pixels,
-		descriptor.squares,
-		descriptor.percentages,
-		descriptor.dimensionless,
-		descriptor.literals
-	)
+		if literals is not None and value in literals:
+			self.value = literals(value)
+			self.unit = LITERAL
+			return
 
-	if key in _PROPERTY_CACHE:
-		hit = _PROPERTY_CACHE[key]
-	elif descriptor.pixels and (m := _MATCH_PIXELS.match(value)):
-		hit = _PROPERTY_CACHE[key] = PIXEL, int(m.group(1))
-	elif descriptor.squares and (m := _MATCH_SQUARES.match(value)):
-		hit = _PROPERTY_CACHE[key] = SQUARE, int(m.group(1))
-	elif descriptor.percentages and (m := _MATCH_PERCENTAGES.match(value)):
-		hit = _PROPERTY_CACHE[key] = PERCENTAGE, float(m.group(1))
-	elif descriptor.dimensionless and (m := _MATCH_DIMENSIONLESS.match(value)):
-		hit = _PROPERTY_CACHE[key] = DIMENSIONLESS, int(m.group(1))
-	elif descriptor.literals and value in descriptor.literals:
-		hit = _PROPERTY_CACHE[key] = LITERAL, descriptor.literals(value)
-	elif descriptor.strings:
-		hit = _PROPERTY_CACHE[key] = STRING, value
-	else:
+		if units & STRING: 
+			self.value = value
+			self.unit = STRING
+			return
+		
 		raise ValueError(f'Unsupported property value: {value}')
-
-	property.unit, property.value = hit
 
 # ─────────────────────────────────── Descriptors ───────────────────────────────────
 
 class BaseDescriptor:
 	name: str
+	default: str
+	units: dict[All | Key, Unit]
+	literals: dict[All | Key, type[Enum] | None]
 
-	def __init__(self, default: str, *,
-		pixels: bool = False,
-		squares: bool = False,
-		percentages: bool = False,
-		dimensionless: bool = False,
-		literals: type[Enum] | None = None,
-		strings: bool = False
-	):
+	def __init__(self, default: str, *, units: Unit = 0b0, literals: type[Enum] | None = None):
 		self.default = default
-		self.pixels = pixels
-		self.squares = squares
-		self.percentages = percentages
-		self.dimensionless = dimensionless
-		self.literals = literals
-		self.strings = strings
+		self.units = { ALL: units }
+		self.literals = { ALL: literals }
 
 	def __set_name__(self, owner: type[Node], name: str):
 		if '__descriptors__' not in owner.__dict__:
@@ -127,7 +140,7 @@ class BaseDescriptor:
 		self.name = f'_{name}'
 
 	def setup(self, instance: Node) -> None:
-		raise NotImplementedError()
+		raise NotImplementedError() 
 
 class PropertyDescriptor(BaseDescriptor):
 	def setup(self, instance: Node) -> None:
@@ -148,20 +161,17 @@ class PropertyDescriptor(BaseDescriptor):
 		return instance.__dict__[self.name]
 
 	def __set__(self, instance: Node, value: str) -> None:
-		property = instance.__dict__[self.name]
-		_parse(self, property, value)
+		property: Property = instance.__dict__[self.name]
+		property.parse(value, self.units[ALL], self.literals[ALL])
 
 class AxialDescriptor(BaseDescriptor):
 	def setup(self, instance: Node) -> None:
-		setattr(instance, self.name, [
+		setattr(instance, self.name, (
 			Property(),
 			Property()
-		])
+		))
 
-		self.__set__(
-			instance,
-			self.default
-		)
+		self.__set__(instance, self.default)
 
 	@overload
 	def __get__(self, instance: None, _: type[Node]) -> AxialDescriptor:
@@ -183,21 +193,18 @@ class AxialDescriptor(BaseDescriptor):
 			case 2: horizontal, vertical = parts[0], parts[1]
 			case _: raise ValueError(f'Axial property must have 1-2 values: {value}')
 
-		property = instance.__dict__[self.name]
-		_parse(self, property[HORIZONTAL], horizontal)
-		_parse(self, property[VERTICAL], vertical)
+		properties: tuple[Property, ...] = instance.__dict__[self.name]
+		properties[HORIZONTAL].parse(horizontal, self.units[HORIZONTAL], self.literals[HORIZONTAL])
+		properties[VERTICAL].parse(vertical, self.units[VERTICAL], self.literals[VERTICAL])
 
 class RelativeAxialDescriptor(BaseDescriptor):
 	def setup(self, instance: Node) -> None:
-		setattr(instance, self.name, [
+		setattr(instance, self.name, (
 			Property(),
 			Property()
-		])
+		))
 
-		self.__set__(
-			instance,
-			self.default
-		)
+		self.__set__(instance, self.default)
 
 	@overload
 	def __get__(self, instance: None, _: type[Node]) -> RelativeAxialDescriptor:
@@ -219,23 +226,20 @@ class RelativeAxialDescriptor(BaseDescriptor):
 			case 2: along, across = parts[0], parts[1]
 			case _: raise ValueError(f'Relative axial property must have 1-2 values: {value}')
 
-		property = instance.__dict__[self.name]
-		_parse(self, property[ALONG], along)
-		_parse(self, property[ACROSS], across)
+		properties: tuple[Property, ...] = instance.__dict__[self.name]
+		properties[ALONG].parse(along, self.units[ALONG], self.literals[ALONG])
+		properties[ACROSS].parse(across, self.units[ACROSS], self.literals[ACROSS])
 
 class DirectionalDescriptor(BaseDescriptor):
 	def setup(self, instance: Node) -> None:
-		setattr(instance, self.name, [
+		setattr(instance, self.name, (
 			Property(),
 			Property(),
 			Property(),
 			Property()
-		])
+		))
 
-		self.__set__(
-			instance,
-			self.default
-		)
+		self.__set__(instance, self.default)
 
 	@overload
 	def __get__(self, instance: None, _: type[Node]) -> DirectionalDescriptor:
@@ -259,25 +263,22 @@ class DirectionalDescriptor(BaseDescriptor):
 			case 4: top, right, bottom, left = parts[0], parts[1], parts[2], parts[3]
 			case _: raise ValueError(f'Directional property must have 1-4 values: {value}')
 
-		property = instance.__dict__[self.name]
-		_parse(self, property[TOP], top)
-		_parse(self, property[RIGHT], right)
-		_parse(self, property[BOTTOM], bottom)
-		_parse(self, property[LEFT], left)
+		properties: tuple[Property, ...] = instance.__dict__[self.name]
+		properties[TOP].parse(top, self.units[TOP], self.literals[TOP])
+		properties[RIGHT].parse(right, self.units[RIGHT], self.literals[RIGHT])
+		properties[BOTTOM].parse(bottom, self.units[BOTTOM], self.literals[BOTTOM])
+		properties[LEFT].parse(left, self.units[LEFT], self.literals[LEFT])
 
 class QuadrantDescriptor(BaseDescriptor):
 	def setup(self, instance: Node) -> None:
-		setattr(instance, self.name, [
+		setattr(instance, self.name, (
 			Property(),
 			Property(),
 			Property(),
 			Property()
-		])
+		))
 
-		self.__set__(
-			instance,
-			self.default
-		)
+		self.__set__(instance, self.default)
 
 	@overload
 	def __get__(self, instance: None, _: type[Node]) -> QuadrantDescriptor:
@@ -295,17 +296,16 @@ class QuadrantDescriptor(BaseDescriptor):
 	def __set__(self, instance: Node, value: str) -> None:
 		parts = value.split()
 		match len(parts):
-			case 1: top, right, bottom, left = parts[0], parts[0], parts[0], parts[0]
-			case 2: top, right, bottom, left = parts[0], parts[1], parts[0], parts[1]
-			case 3: top, right, bottom, left = parts[0], parts[1], parts[2], parts[1]
-			case 4: top, right, bottom, left = parts[0], parts[1], parts[2], parts[3]
-			case _: raise ValueError(f'Quadrantial property must have 1-4 values: {value}')
+			case 1: top_left, top_right, bottom_right, bottom_left = parts[0], parts[0], parts[0], parts[0]
+			case 2: top_left, top_right, bottom_left, bottom_right = parts[0], parts[0], parts[1], parts[1]
+			case 4: top_left, top_right, bottom_right, bottom_left = parts[0], parts[1], parts[2], parts[3]
+			case _: raise ValueError(f'Quadrantial property must have 1, 2, or 4 values: {value}')
 
-		property = instance.__dict__[self.name]
-		_parse(self, property[TOP_LEFT], top)
-		_parse(self, property[TOP_RIGHT], right)
-		_parse(self, property[BOTTOM_LEFT], bottom)
-		_parse(self, property[BOTTOM_RIGHT], left)
+		properties: tuple[Property, ...] = instance.__dict__[self.name]
+		properties[TOP_LEFT].parse(top_left, self.units[TOP_LEFT], self.literals[TOP_LEFT])
+		properties[TOP_RIGHT].parse(top_right, self.units[TOP_RIGHT], self.literals[TOP_RIGHT])
+		properties[BOTTOM_RIGHT].parse(bottom_left, self.units[BOTTOM_RIGHT], self.literals[BOTTOM_RIGHT])
+		properties[BOTTOM_LEFT].parse(bottom_right, self.units[BOTTOM_LEFT], self.literals[BOTTOM_LEFT])
 
 class ArrayDescriptor(BaseDescriptor):
 	def setup(self, instance: Node) -> None:
@@ -330,18 +330,22 @@ class ArrayDescriptor(BaseDescriptor):
 		return instance.__dict__[self.name]
 
 	def __set__(self, instance: Node, value: str) -> None:
-		properties = []
+		properties: list[Property] = instance.__dict__[self.name]
+		properties.clear()
+
 		for part in value.split():
 			property = Property()
-			_parse(self, property, part)
+			property.parse(part, self.units[ALL], self.literals[ALL])
 			properties.append(property)
 
-		instance.__dict__[self.name] = properties
-
 class SubDescriptor:
-	def __init__(self, parent: BaseDescriptor, key: Axis | RelativeAxis | Direction | Quadrant):
+	def __init__(self, parent: BaseDescriptor, key: Key, *, units: Unit | Unset = UNSET, literals: type[Enum] | None | Unset = UNSET):
 		self.parent = parent
 		self.key = key
+
+		# Register units and literals
+		parent.units[key] = parent.units[ALL] if units == UNSET else cast(Unit, units)
+		parent.literals[key] = parent.literals[ALL] if literals == UNSET else cast(type[Enum] | None, literals)
 
 	def __set_name__(self, owner: type[Node], name: str):
 		if '__styles__' not in owner.__dict__:
@@ -359,10 +363,8 @@ class SubDescriptor:
 	def __get__(self, instance: Node | None, _: type[Node]) -> Property | SubDescriptor:
 		if instance is None:
 			return self
-
-		property = instance.__dict__[self.parent.name]
-		return property[self.key]
+		return instance.__dict__[self.parent.name][self.key]
 
 	def __set__(self, instance: Node, value: str):
-		property = instance.__dict__[self.parent.name]
-		_parse(self.parent, property[self.key], value)
+		property: Property = instance.__dict__[self.parent.name][self.key]
+		property.parse(value, self.parent.units[self.key], self.parent.literals[self.key])

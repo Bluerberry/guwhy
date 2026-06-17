@@ -21,7 +21,6 @@ class NodeOrigin(Enum):
 	AUTO = 'auto'
 
 class NodeSize(Enum):
-	GROW = 'grow'
 	FIT = 'fit'
 
 class NodeMinSize(Enum):
@@ -93,10 +92,8 @@ class GridChildGap(Enum):
 	DOUBLE = 'double'
 	BOLD = 'bold'
 
-class GridColumnSize(Enum):
-	GROW = 'grow'
+class GridColumnWidths(Enum):
 	FIT = 'fit'
 
-class GridRowSize(Enum):
-	GROW = 'grow'
+class GridRowHeights(Enum):
 	FIT = 'fit'

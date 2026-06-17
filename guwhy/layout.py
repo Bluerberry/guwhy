@@ -4,6 +4,8 @@ from __future__ import annotations
 # External libraries
 from typing import TYPE_CHECKING, Generator
 
+from guwhy.properties import Node
+
 # Internal libraries
 from .properties import *
 from .literals import *
@@ -167,10 +169,15 @@ class Node:
 	__descriptors__: list[BaseDescriptor] = []
 	__styles__: list[str] = []
 
+	_root: Node
 	_parent: Parent | None = None
 	_index: int | None = None
 	_prev: Node | None = None
 	_next: Node | None = None
+
+	@property
+	def root(self) -> Node:
+		return self._root
 
 	@property
 	def parent(self) -> Parent | None:
@@ -200,62 +207,61 @@ class Node:
 	id: str | None
 	classlist: list[str]
 
-	visibility = PropertyDescriptor('show', literals=NodeVisibility)
-	positioning = PropertyDescriptor('auto', literals=NodePositioning)
-	z_index = PropertyDescriptor('auto', dimensionless=True, literals=NodeZIndex)
+	visibility = PropertyDescriptor('show', units=LITERAL, literals=NodeVisibility)
+	positioning = PropertyDescriptor('auto', units=LITERAL, literals=NodePositioning)
+	z_index = PropertyDescriptor('auto', units=DIMENSIONLESS | LITERAL, literals=NodeZIndex)
+	mouse_events = PropertyDescriptor('capture', units=LITERAL, literals=NodeMouseEvents)
+	background = PropertyDescriptor('opaque', units=LITERAL, literals=NodeBackground)
 
-	origin = AxialDescriptor('auto', pixels=True, squares=True, percentages=True, literals=NodeOrigin)
+	origin = AxialDescriptor('auto', units=PIXEL | SQUARE | PERCENTAGE | LITERAL, literals=NodeOrigin)
 	origin_x = SubDescriptor(origin, HORIZONTAL)
 	origin_y = SubDescriptor(origin, VERTICAL)
 
-	translate = AxialDescriptor('0px 0px', pixels=True, squares=True, percentages=True)
+	translate = AxialDescriptor('0px 0px', units=PIXEL | SQUARE | PERCENTAGE)
 	translate_x = SubDescriptor(translate, HORIZONTAL)
 	translate_y = SubDescriptor(translate, VERTICAL)
 
-	size = AxialDescriptor('fit', pixels=True, squares=True, percentages=True, literals=NodeSize)
+	size = AxialDescriptor('fit', units=PIXEL | SQUARE | FRACTION | PERCENTAGE | LITERAL, literals=NodeSize)
 	width = SubDescriptor(size, HORIZONTAL)
 	height = SubDescriptor(size, VERTICAL)
 
-	min_size = AxialDescriptor('none', pixels=True, squares=True, percentages=True, literals=NodeMinSize)
+	min_size = AxialDescriptor('none', units=PIXEL | SQUARE | PERCENTAGE | LITERAL, literals=NodeMinSize)
 	min_width = SubDescriptor(min_size, HORIZONTAL)
 	min_height = SubDescriptor(min_size, VERTICAL)
 
-	max_size = AxialDescriptor('none', pixels=True, squares=True, percentages=True, literals=NodeMaxSize)
+	max_size = AxialDescriptor('none', units=PIXEL | SQUARE | PERCENTAGE | LITERAL, literals=NodeMaxSize)
 	max_width = SubDescriptor(max_size, HORIZONTAL)
 	max_height = SubDescriptor(max_size, VERTICAL)
 
-	margin = DirectionalDescriptor('0px', pixels=True, squares=True)
+	margin = DirectionalDescriptor('0px', units=PIXEL | SQUARE)
 	margin_top = SubDescriptor(margin, TOP)
 	margin_right = SubDescriptor(margin, RIGHT)
 	margin_bottom = SubDescriptor(margin, BOTTOM)
 	margin_left = SubDescriptor(margin, LEFT)
 
-	padding = DirectionalDescriptor('0px',pixels=True, squares=True)
+	padding = DirectionalDescriptor('0px', units=PIXEL | SQUARE)
 	padding_top = SubDescriptor(padding, TOP)
 	padding_right = SubDescriptor(padding, RIGHT)
 	padding_bottom = SubDescriptor(padding, BOTTOM)
 	padding_left = SubDescriptor(padding, LEFT)
 
-	borders = DirectionalDescriptor('none', literals=NodeBorders)
-	border_top = SubDescriptor(borders, TOP)
-	border_right = SubDescriptor(borders, RIGHT)
-	border_bottom = SubDescriptor(borders, BOTTOM)
-	border_left = SubDescriptor(borders, LEFT)
+	border = DirectionalDescriptor('none', units=LITERAL, literals=NodeBorders)
+	border_top = SubDescriptor(border, TOP)
+	border_right = SubDescriptor(border, RIGHT)
+	border_bottom = SubDescriptor(border, BOTTOM)
+	border_left = SubDescriptor(border, LEFT)
 
-	corners = QuadrantDescriptor('sharp', literals=NodeCorners)
-	border_top_left = SubDescriptor(borders, TOP_LEFT)
-	border_top_right = SubDescriptor(borders, TOP_RIGHT)
-	border_bottom_left = SubDescriptor(borders, BOTTOM_LEFT)
-	border_bottom_right = SubDescriptor(borders, BOTTOM_RIGHT)
+	corner = QuadrantDescriptor('sharp', units=LITERAL, literals=NodeCorners)
+	corner_top_left = SubDescriptor(border, TOP_LEFT)
+	corner_top_right = SubDescriptor(border, TOP_RIGHT)
+	corner_bottom_left = SubDescriptor(border, BOTTOM_LEFT)
+	corner_bottom_right = SubDescriptor(border, BOTTOM_RIGHT)
 
-	overflow =  DirectionalDescriptor('hide', literals=NodeOverflow)
+	overflow =  DirectionalDescriptor('hide', units=LITERAL, literals=NodeOverflow)
 	overflow_top = SubDescriptor(overflow, TOP)
 	overflow_right = SubDescriptor(overflow, RIGHT)
 	overflow_bottom = SubDescriptor(overflow, BOTTOM)
 	overflow_left = SubDescriptor(overflow, LEFT)
-
-	background = PropertyDescriptor('opaque', literals=NodeBackground)
-	mouse_events = PropertyDescriptor('capture', literals=NodeMouseEvents)
 
 	def __init__(self, *,
 		id: str | None = None,
@@ -277,6 +283,7 @@ class Node:
 		self.id = id
 		self.classlist = classlist.copy()
 
+		self._root = self 
 		self.setParent(parent)
 		self.apply(**kwargs)
 
@@ -352,15 +359,15 @@ class Node:
 		drawn_bottom = min(rect_bottom, clip_bottom)
 		drawn_left = max(rect_left, clip_left)
 
-		top_border = self.borders[TOP].value
-		right_border = self.borders[RIGHT].value
-		bottom_border = self.borders[BOTTOM].value
-		left_border = self.borders[LEFT].value
+		top_border = self.border[TOP].value
+		right_border = self.border[RIGHT].value
+		bottom_border = self.border[BOTTOM].value
+		left_border = self.border[LEFT].value
 
-		top_left_corner = self.corners[TOP_LEFT].value
-		top_right_corner = self.corners[TOP_RIGHT].value
-		bottom_left_corner = self.corners[BOTTOM_LEFT].value
-		bottom_right_corner = self.corners[BOTTOM_RIGHT].value
+		top_left_corner = self.corner[TOP_LEFT].value
+		top_right_corner = self.corner[TOP_RIGHT].value
+		bottom_left_corner = self.corner[BOTTOM_LEFT].value
+		bottom_right_corner = self.corner[BOTTOM_RIGHT].value
 
 		has_top = top_border != NodeBorders.NONE
 		has_right = right_border != NodeBorders.NONE
@@ -485,9 +492,9 @@ class Node:
 		self._inner_offset[axis] = first_padding.computed + last_padding.computed
 		self._outer_offset[axis] = first_margin.computed + last_margin.computed
 
-		if self.borders[first_direction].value != NodeBorders.NONE:
+		if self.border[first_direction].value != NodeBorders.NONE:
 			self._inner_offset[axis] += 1
-		if self.borders[last_direction].value != NodeBorders.NONE:
+		if self.border[last_direction].value != NodeBorders.NONE:
 			self._inner_offset[axis] += 1
 
 	def _computePreferredAxial(self, axis: Axis, root: Node) -> None:
@@ -618,19 +625,23 @@ class Parent(Node, metaclass=AbstractNode):
 		if child is self or isinstance(child, Parent) and self in child._descendants:
 			raise ValueError('Cannot add an ancestor as a child (cyclic hierarchy)')
 
-		# Update child properties
-		child._index = len(self._children)
-		if child._index > 0:
-			prev = self._children[-1]
-			prev._next = child
-			child._prev = prev
-
-		# Update parent properties
+		# Link child
 		if child._parent is not None:
 			child._parent.removeChild(child)
 
 		child._parent = self
 		self._children.append(child)
+
+		# Update index
+		child._index = len(self._children) - 1
+		if child._index > 0:
+			prev = self._children[-2]
+			prev._next = child
+			child._prev = prev
+
+		# Update root
+		for node in _preOrderTraversal(child):
+			node._root = self._root
 
 		# Update descendants
 		node = self
@@ -646,8 +657,10 @@ class Parent(Node, metaclass=AbstractNode):
 
 		# Update sibling index
 		node = child._next
-		while node:
-			assert node._index is not None
+		while node is not None:
+			if node._index is None:
+				raise InternalError('Malformed layout hierarchy')
+			
 			node._index -= 1
 			node = node._next
 
@@ -663,12 +676,16 @@ class Parent(Node, metaclass=AbstractNode):
 		child._prev = None
 		child._next = None
 
+		# Update root
+		for node in _preOrderTraversal(child):
+			node._root = child
+
 		# Update descendants
 		node = self
-		while node:
+		while node is not None:
 			node._descendants.discard(child)
 			if isinstance(child, Box):
-				node._descendants.difference_update(child._descendants)
+				node._descendants -= child._descendants
 			node = node._parent
 
 	# ──── Compute pipeline
@@ -732,10 +749,10 @@ class Box(Parent):
 
 	# ──── Styles
 
-	axis = PropertyDescriptor('vertical', literals=BoxAxis)
-	child_gap = PropertyDescriptor('0px', pixels=True, squares=True, literals=BoxChildGap)
+	axis = PropertyDescriptor('vertical', units=LITERAL, literals=BoxAxis)
+	gap = PropertyDescriptor('0px', units=PIXEL | SQUARE | LITERAL, literals=BoxChildGap)
 
-	place_children = RelativeAxialDescriptor('start', literals=BoxPlaceChildren)
+	place_children = RelativeAxialDescriptor('start', units=LITERAL, literals=BoxPlaceChildren)
 	place_children_along = SubDescriptor(place_children, ALONG)
 	place_children_across = SubDescriptor(place_children, ACROSS)
 
@@ -745,17 +762,17 @@ class Box(Parent):
 		super()._prepareCompute()
 
 		# Prepare properties
-		self.child_gap.prepare(self.axis.value, default=0)
+		self.gap.prepare(self.axis.value, default=0)
 
 	def _computePreferredAxial(self, axis: Axis, root: Node) -> None:
 
 		# Compute preferred size
-		if self.child_gap.value != BoxChildGap.AUTO and _compareAxis(axis, self.axis.value):
+		if self.gap.value != BoxChildGap.AUTO and _compareAxis(axis, self.axis.value):
 			self_size = self.size[axis]
 
 			if self_size.value in (NodeSize.GROW, NodeSize.FIT) or self_size.unit == PERCENTAGE:
 				if (gaps := len(self._automatic_children) - 1) > 0:
-					self_size.computed += self.child_gap.computed * gaps
+					self_size.computed += self.gap.computed * gaps
 
 		super()._computePreferredAxial(axis, root)
 
@@ -767,9 +784,9 @@ class Box(Parent):
 			remaining = self._floodChildren(axis)
 
 			# Calculate autmatic child gap
-			if self.child_gap.value == BoxChildGap.AUTO:
+			if self.gap.value == BoxChildGap.AUTO:
 				if (gaps := len(self._automatic_children) - 1) > 0:
-					self.child_gap.computed = int(remaining / gaps)
+					self.gap.computed = int(remaining / gaps)
 
 		# Clamp children across axis
 		else:
@@ -780,7 +797,7 @@ class Box(Parent):
 		# Compute delta
 		delta = self.size[axis].computed - self._inner_offset[axis]
 		if (gaps := len(self._automatic_children) - 1) > 0:
-			delta -= self.child_gap.computed * gaps
+			delta -= self.gap.computed * gaps
 		for child in self._automatic_children:
 			delta -= child.size[axis].computed + child._outer_offset[axis]
 
@@ -911,16 +928,16 @@ class Box(Parent):
 
 		# Compute internal origin
 		offset = self.origin[axis].computed + self.padding[first_direction].computed
-		if self.borders[first_direction].value != NodeBorders.NONE:
+		if self.border[first_direction].value != NodeBorders.NONE:
 			offset += 1
 
 		# Resolve child alignment
-		if place_children_along != BoxPlaceChildren.START and self.child_gap.value != BoxChildGap.AUTO:
+		if place_children_along != BoxPlaceChildren.START and self.gap.value != BoxChildGap.AUTO:
 
 			# Get remaining space
 			remaining = self.size[axis].computed - self._inner_offset[axis]
 			if (gaps := len(self._automatic_children) - 1) > 0:
-				remaining -= self.child_gap.computed * gaps
+				remaining -= self.gap.computed * gaps
 			for child in self._automatic_children:
 				remaining -= child.size[axis].computed + child._outer_offset[axis]
 
@@ -938,7 +955,7 @@ class Box(Parent):
 				+ child.translate[axis].computed
 			)
 
-			offset += child.size[axis].computed + child._outer_offset[axis] + self.child_gap.computed
+			offset += child.size[axis].computed + child._outer_offset[axis] + self.gap.computed
 
 	def _computePositionAcross(self, axis: Axis):
 
@@ -948,7 +965,7 @@ class Box(Parent):
 
 		# Compute internal origin
 		offset = self.origin[axis].computed + self.padding[first_direction].computed
-		if self.borders[first_direction].value != NodeBorders.NONE:
+		if self.border[first_direction].value != NodeBorders.NONE:
 			offset += 1
 
 		for child in self._automatic_children:
@@ -973,21 +990,38 @@ class Grid(Parent):
 
 	# ──── Styles
 
-	layout = AxialDescriptor('auto', dimensionless=True, literals=GridLayout)
+	layout = AxialDescriptor('auto', units=DIMENSIONLESS | LITERAL, literals=GridLayout)
 	columns = SubDescriptor(layout, HORIZONTAL)
 	rows = SubDescriptor(layout, VERTICAL)
 
-	column_size = ArrayDescriptor('fit', pixels=True, squares=True, percentages=True, literals=GridColumnSize)
-	row_size = ArrayDescriptor('fit', pixels=True, squares=True, percentages=True, literals=GridRowSize)
+	column_widths = ArrayDescriptor('fit', units=PIXEL | SQUARE | FRACTION | PERCENTAGE | LITERAL, literals=GridColumnWidths)
+	row_heights = ArrayDescriptor('fit', units=PIXEL | SQUARE | FRACTION | PERCENTAGE | LITERAL, literals=GridRowHeights)
 
-	place_children = AxialDescriptor('left top')
+	place_children = AxialDescriptor('left top', units=LITERAL)
 	place_children_h = SubDescriptor(place_children, HORIZONTAL, literals=GridPlaceChildrenH)
 	place_children_v = SubDescriptor(place_children, VERTICAL, literals=GridPlaceChildrenV)
 
-	child_gap = AxialDescriptor('0px', pixels=True, squares=True, literals=GridChildGap)
-	child_gap_h = SubDescriptor(place_children, HORIZONTAL)
-	child_gap_v = SubDescriptor(place_children, VERTICAL)
+	gap = AxialDescriptor('0px', units=PIXEL | SQUARE | LITERAL, literals=GridChildGap)
+	gap_columns = SubDescriptor(place_children, HORIZONTAL)
+	gap_rows = SubDescriptor(place_children, VERTICAL)
 
 	# ──── Compute pipeline
 
-	...
+	def _prepareCompute(self) -> None:
+		super()._prepareCompute()
+
+		# Prepare properties
+		for property in self.column_widths:
+			property.prepare(HORIZONTAL, default=0)
+		for property in self.row_heights:
+			property.prepare(VERTICAL, default=0)
+
+	def _prepareComputeAxial(self, axis: Axis) -> None:
+		super()._prepareComputeAxial(axis)
+
+		# Prepare properties
+		self.layout[axis].prepare(axis, default=0)
+		self.child_gap[axis].prepare(axis, default=0)
+	
+	def _computePreferredAxial(self, axis: Axis, root: Node) -> None:
+		super()._computePreferredAxial(axis, root)
