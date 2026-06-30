@@ -73,6 +73,29 @@ class BoxPlaceChildren(Enum):
 class BoxChildGap(Enum):
 	AUTO = 'auto'
 
+# ─────────────────────────────────── Text ───────────────────────────────────
+
+class TextWrapText(Enum):
+	NONE = 'none'
+	CHAR = 'none'
+	WORD = 'word'
+
+class TextAlignText(Enum):
+	LEFT = 'left'
+	CENTER = 'center'
+	RIGHT = 'right'
+	JUSTIFY = 'justify'
+
+class TextHPlaceText(Enum):
+	LEFT = 'left'
+	CENTER = 'center'
+	RIGHT= 'right'
+
+class TextVPlaceText(Enum):
+	TOP = 'top'
+	CENTER = 'center'
+	BOTTOM = 'bottom'
+
 # ─────────────────────────────────── Grid ───────────────────────────────────
 
 class GridLayout(Enum):
