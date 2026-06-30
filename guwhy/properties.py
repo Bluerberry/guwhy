@@ -13,13 +13,12 @@ if TYPE_CHECKING:
 # ─────────────────────────────────── Types ───────────────────────────────────
 
 type Unit = int
-PIXEL			= 0b0000001
-SQUARE			= 0b0000010
-FRACTION		= 0b0000100
-PERCENTAGE		= 0b0001000
-DIMENSIONLESS	= 0b0010000
-LITERAL			= 0b0100000
-STRING			= 0b1000000
+PIXEL			= 0b000001
+SQUARE			= 0b000010
+PERCENTAGE		= 0b000100
+DIMENSIONLESS	= 0b001000
+LITERAL			= 0b010000
+STRING			= 0b100000
 
 type Unset = object
 UNSET = object()
@@ -56,11 +55,6 @@ _PARSE_DATA = (
 		int
 	),
 	(
-		FRACTION,
-		regex.compile(r'^([0-9]+)fr$'),
-		int
-	),
-	(
 		PERCENTAGE,
 		regex.compile(r'^(-?[0-9]+(?:\.[0-9]+)?)%$'),
 		float
@@ -79,14 +73,14 @@ class Property:
 	value: Any
 	computed: Any
 
-	def prepare(self, axis: Axis, *, default: Any | Unset = UNSET) -> None:
-		if self.unit & FRACTION | PERCENTAGE | LITERAL and default != UNSET:
+	def prepare(self, axis: Axis | Unset = UNSET, default: Any | Unset = UNSET) -> None:
+		if self.unit & PERCENTAGE | LITERAL and default != UNSET:
 			self.computed = default
+			return
 
-		else:
-			self.computed = self.value
-			if self.unit & SQUARE and axis == HORIZONTAL:
-				self.computed *= 2
+		self.computed = self.value
+		if self.unit & SQUARE and axis == HORIZONTAL:
+			self.computed *= 2
 
 	def parse(self, value: str, units: Unit, literals: type[Enum] | None):
 		for unit, pattern, cast in _PARSE_DATA:
