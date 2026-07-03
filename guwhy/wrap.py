@@ -6,7 +6,7 @@ from guwhy.literals import *
 
 # ─────────────────────────────────── Text wrap ───────────────────────────────────
 
-def minTextWidth(lines: list[str], wrap: TextWrapText) -> int:
+def measureTextWidth(lines: list[str], wrap: TextWrapText) -> int:
 	match wrap:
 		case TextWrapText.NONE:
 			return max(map(len, lines))
@@ -18,13 +18,16 @@ def minTextWidth(lines: list[str], wrap: TextWrapText) -> int:
 				words += line.split()
 			return max(map(len, words))
 
-def minTextHeight(lines: list[str], wrap: TextWrapText) -> int:
+def measureTextHeight(lines: list[str], wrap: TextWrapText) -> int:
 	return len(lines)
+
+def prepareText(text: str) -> list[str]:
+    return [' '.join(line.split()) for line in text.splitlines()]
 
 def formatText(lines: list[str], wrap: TextWrapText, align: TextAlignText, max_width: int) -> list[str]:
 	match wrap:
 		case TextWrapText.NONE:
-			wrapped = _collapseWhitespace(lines)
+			wrapped = lines
 		case TextWrapText.CHAR:
 			wrapped = _wrapChar(lines, max_width)
 		case TextWrapText.WORD:
@@ -41,9 +44,6 @@ def formatText(lines: list[str], wrap: TextWrapText, align: TextAlignText, max_w
 			return [line.rjust(width) for line in wrapped]
 		case TextAlignText.JUSTIFY:
 			return _justify(wrapped, max_width, justify_last=False)
-
-def _collapseWhitespace(lines: list[str]) -> list[str]:
-    return [' '.join(line.split()) for line in lines]
 
 def _wrapChar(lines: list[str], max_width: int) -> list[str]:
 	result: list[str] = []

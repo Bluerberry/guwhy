@@ -10,6 +10,7 @@ from guwhy.properties import Node
 from .properties import *
 from .literals import *
 from .errors import *
+from .wrap import *
 
 if TYPE_CHECKING:
 	from .canvas import Canvas
@@ -989,6 +990,126 @@ class Box(Parent):
 					child_origin.computed += int(remaining / 2)
 				elif place_children_across == BoxPlaceChildren.END:
 					child_origin.computed += remaining
+
+class Text(Node):
+
+	# ──── Properties
+
+	text = PropertyDescriptor('', units=STRING)
+	wrap_text = PropertyDescriptor('word', literals=TextWrapText)
+	align_text = PropertyDescriptor('left', literals=TextAlignText)
+	
+	place_text = AxialDescriptor('left top')
+	place_text_x = SubDescriptor(place_text, HORIZONTAL, literals=TextPlaceTextX)
+	place_text_y = SubDescriptor(place_text, VERTICAL, literals=TextPlaceTextY)
+
+	# ──── Public
+
+	def paint(self, canvas: Canvas) -> None:
+		rect_top = self._rect[TOP]
+		rect_right = self._rect[RIGHT]
+		rect_bottom = self._rect[BOTTOM]
+		rect_left = self._rect[LEFT]
+		
+		clip_top = self._clip[TOP]
+		clip_right = self._clip[RIGHT]
+		clip_bottom = self._clip[BOTTOM]
+		clip_left = self._clip[LEFT]
+		
+		# Skip if zero-size
+		if rect_right < rect_left or rect_bottom < rect_top:
+			return
+
+		# Skip if outside of clip
+		if rect_right < clip_left or rect_left > clip_right or rect_bottom < clip_top or rect_top > clip_bottom:
+			return
+		
+		# Inherit Node.paint for background, borders, corners
+		super().paint(canvas)
+		
+		lines: list[str] = self.text.computed
+		if not lines:
+			return
+		
+		content_left = rect_left + self._inner_offset[HORIZONTAL] // 2
+		content_top = rect_top + self._inner_offset[VERTICAL] // 2
+		content_right = rect_right - self._inner_offset[HORIZONTAL] // 2
+		content_bottom = rect_bottom - self._inner_offset[VERTICAL]   // 2
+		
+		content_width = content_right - content_left + 1
+		content_height = content_bottom - content_top  + 1
+		
+		if content_width <= 0 or content_height <= 0:
+			return
+		
+		# Vertical placement
+		lines_length = len(lines)
+		place_vert = self.place_text[VERTICAL].value
+		
+		if place_vert == TextPlaceTextY.TOP:
+			text_top = content_top
+		elif place_vert == TextPlaceTextY.BOTTOM:
+			text_top = content_bottom - lines_length + 1
+		else:
+			text_top = content_top + (content_height - lines_length) // 2
+		
+		# Horizontal placement
+		lines_width  = len(lines[0])
+		place_horz  = self.place_text[HORIZONTAL].value
+		
+		if place_horz == TextPlaceTextX.LEFT:
+			text_left = content_left
+		elif place_horz == TextPlaceTextX.RIGHT:
+			text_left = content_right - lines_width + 1
+		else:
+			text_left = content_left + (content_width - lines_width) // 2
+		
+		# Clip bounds for text (intersection of content area and node clip)
+		draw_top = max(text_top, clip_top, content_top)
+		draw_bottom = min(text_top + lines_length - 1, clip_bottom, content_bottom)
+		draw_left = max(text_left, clip_left, content_left)
+		draw_right = min(text_left + lines_width - 1, clip_right, content_right)
+		
+		if draw_right < draw_left or draw_bottom < draw_top:
+			return
+		
+		# Character offsets into the line string
+		char_start = draw_left - text_left
+		char_end = draw_right - text_left + 1
+		
+		# Paint each visible line
+		for row in range(draw_top, draw_bottom + 1):
+			line_index = row - text_top
+			canvas.setString(lines[line_index][char_start:char_end], draw_left, row)
+
+	# ──── Compute pipeline
+
+	def _computePreferredHorizontal(self) -> None:
+		self.text.computed = prepareText(self.text.value)
+
+		self_size = self.size[HORIZONTAL]
+		if self_size.value == NodeSize.SHRINK:
+			self_size.computed += measureTextWidth(self.text.computed, self.wrap_text.value)
+		elif self_size.unit & (PERCENTAGE | LITERAL):
+			self_size.computed += measureTextWidth(self.text.computed, TextWrapText.NONE)
+
+	def _computePreferredVertical(self) -> None:
+			
+		self_size = self.size[VERTICAL]
+		if self_size.value == NodeSize.SHRINK:
+			
+
+
+			self.text.computed = wrapLines(
+				self.text.computed, 
+				self.wrap_text.value, 
+				self.align_text.value, 
+				self.size[HORIZONTAL].computed - self._inner_offset[HORIZONTAL]
+			)
+			
+			self.size[VERTICAL].computed += len(self.text.computed)
+		
+		super()._computePreferredAxial(axis, root)
 
 class Grid(Parent):
 

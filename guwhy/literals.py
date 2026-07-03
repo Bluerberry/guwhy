@@ -86,12 +86,12 @@ class TextAlignText(Enum):
 	RIGHT = 'right'
 	JUSTIFY = 'justify'
 
-class TextHPlaceText(Enum):
+class TextPlaceTextX(Enum):
 	LEFT = 'left'
 	CENTER = 'center'
 	RIGHT= 'right'
 
-class TextVPlaceText(Enum):
+class TextPlaceTextY(Enum):
 	TOP = 'top'
 	CENTER = 'center'
 	BOTTOM = 'bottom'
